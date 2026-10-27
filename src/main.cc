@@ -32,6 +32,22 @@ extern "C" CFFI_LUA_EXPORT int luaopen_cffi(lua_State *L) {
 }
 
 extern "C" CFFI_LUA_EXPORT int luaopen_ffi(lua_State *L) {
-    ffi_module_open(L);
+    if (luaL_getmetatable(L, "cffi_cdata_handle") != LUA_TNIL) {
+        lua_pop(L, 1);
+        lua_getfield(L, LUA_REGISTRYINDEX, LUA_LOADED_TABLE);
+        lua_getfield(L, -1, "cffi");
+        if (lua_isnil(L, -1)) {
+            lua_pop(L, 1);
+            lua_getfield(L, -1, "ffi");
+        }
+        lua_remove(L, -2);
+    } else {
+        lua_pop(L, 1);
+        ffi_module_open(L);
+    }
+    lua_getfield(L, -1, "type");
+    lua_setglobal(L, "type");
+    lua_getfield(L, -1, "tonumber");
+    lua_setglobal(L, "tonumber");
     return 1;
 }

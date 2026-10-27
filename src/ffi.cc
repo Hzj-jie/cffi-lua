@@ -1525,6 +1525,36 @@ void set_global(lua_State *L, lib::c_lib const *dl, char const *sname, int idx) 
     from_lua(L, cv.type(), lib::get_sym(dl, L, cv.sym()), idx);
 }
 
+static std::size_t check_vla_size(lua_State *L, int idx) {
+    if (iscdata(L, idx)) {
+        auto &cd = tocdata(L, idx);
+        if (!cd.decl.integer()) {
+            luaL_checkinteger(L, idx);
+        }
+        if (cd.decl.is_unsigned()) {
+            auto u = check_arith<unsigned long long>(L, idx);
+            if (
+                u > static_cast<unsigned long long>(
+                    util::limit_max<lua_Integer>()
+                )
+            ) {
+                luaL_error(L, "size of C type is unknown or too large");
+            }
+            return std::size_t(u);
+        }
+        auto s = check_arith<long long>(L, idx);
+        if (s < 0) {
+            luaL_error(L, "size of C type is unknown or too large");
+        }
+        return std::size_t(s);
+    }
+    auto arrs = luaL_checkinteger(L, idx);
+    if (arrs < 0) {
+        luaL_error(L, "size of C type is unknown or too large");
+    }
+    return std::size_t(arrs);
+}
+
 void make_cdata(lua_State *L, ast::c_type const &decl, int rule, int idx) {
     switch (decl.type()) {
         case ast::C_BUILTIN_FUNC:
@@ -1542,13 +1572,10 @@ void make_cdata(lua_State *L, ast::c_type const &decl, int rule, int idx) {
     }
     if (decl.type() == ast::C_BUILTIN_ARRAY) {
         if (decl.vla()) {
-            auto arrs = luaL_checkinteger(L, idx);
-            if (arrs < 0) {
-                luaL_error(L, "size of C type is unknown");
-            }
+            auto arrs = check_vla_size(L, idx);
             ++iidx;
             ninits = lua_gettop(L) - iidx + 1;
-            narr = std::size_t(arrs);
+            narr = arrs;
             rsz = decl.ptr_base().alloc_size() * narr;
             /* see below */
             rsz += sizeof(ffi::scalar_stor_t);
@@ -1571,14 +1598,11 @@ void make_cdata(lua_State *L, ast::c_type const &decl, int rule, int idx) {
     } else if (decl.type() == ast::C_BUILTIN_RECORD) {
         ast::c_type const *lf = nullptr;
         if (decl.record().flexible(&lf)) {
-            auto arrs = luaL_checkinteger(L, idx);
-            if (arrs < 0) {
-                luaL_error(L, "size of C type is unknown");
-            }
+            auto arrs = check_vla_size(L, idx);
             ++iidx;
             ninits = lua_gettop(L) - iidx + 1;
             rsz = decl.alloc_size() + (
-                std::size_t(arrs) * lf->ptr_base().alloc_size()
+                arrs * lf->ptr_base().alloc_size()
             );
             goto newdata;
         }

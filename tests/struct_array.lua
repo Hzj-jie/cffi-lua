@@ -256,3 +256,10 @@ ffi.cdef [[
 assert(ffi.sizeof("struct flex_tail_s") == 16)
 assert(ffi.alignof("struct flex_tail_s") == 8)
 assert(ffi.offsetof("struct flex_tail_s", "data") == 9)
+
+-- VLA and flexible struct counts with integer cdata
+assert(ffi.sizeof(ffi.new("uint8_t[?]", ffi.new("uint64_t", 16))) == 16)
+assert(ffi.sizeof(ffi.new("struct flex", ffi.new("size_t", 3))) == ffi.sizeof(ffi.new("struct flex", 3)))
+assert(not pcall(ffi.new, "uint8_t[?]", -1))
+assert(not pcall(ffi.new, "uint8_t[?]", ffi.new("int64_t", -1)))
+assert(not pcall(ffi.new, "uint8_t[?]", ffi.new("uint64_t", -1)))

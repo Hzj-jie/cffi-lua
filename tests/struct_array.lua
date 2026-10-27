@@ -199,3 +199,20 @@ assert(ffi.string(x.buf2 + 5) == "flex")
 assert(x.buf[4] == (x.buf + 4)[0])
 assert(x.buf2[4] == (x.buf2 + 4)[0])
 assert(x.buf[4] == string.byte("o"))
+
+-- packed structs and enums
+ffi.cdef [[
+    struct __attribute__((packed)) packed_s {
+        char c;
+        int i;
+    };
+    enum __attribute__((packed)) packed_e {
+        PE_A = 1,
+        PE_B = 2,
+    };
+]]
+
+assert(ffi.sizeof("struct packed_s") == 5)
+assert(ffi.alignof("struct packed_s") == 1)
+assert(ffi.offsetof("struct packed_s", "i") == 1)
+assert(ffi.sizeof("enum packed_e") == 4)

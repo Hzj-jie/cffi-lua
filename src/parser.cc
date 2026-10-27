@@ -2453,7 +2453,7 @@ static ast::c_record const *parse_record(lex_state &ls, bool *newst) {
                 return nullptr;
             }
             /* different type or not stored yet, raise error or store */
-            auto *p = new ast::c_record{util::move(sname), is_uni};
+            auto *p = new ast::c_record{util::move(sname), is_uni, is_pack};
             if (!ls.store_decl(p, sline)) {
                 return nullptr;
             }
@@ -2534,6 +2534,9 @@ field_end:
         auto &st = oldecl->as<ast::c_record>();
         if (st.opaque()) {
             /* previous declaration was opaque; prevent redef errors */
+            if (is_pack) {
+                st.packed(true);
+            }
             st.set_fields(util::move(fields));
             if (newst) {
                 *newst = true;
@@ -2545,7 +2548,7 @@ field_end:
     if (newst) {
         *newst = true;
     }
-    auto *p = new ast::c_record{util::move(sname), util::move(fields), is_uni};
+    auto *p = new ast::c_record{util::move(sname), util::move(fields), is_uni, is_pack};
     if (!ls.store_decl(p, sline)) {
         return nullptr;
     }

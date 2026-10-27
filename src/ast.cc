@@ -1073,6 +1073,23 @@ std::ptrdiff_t c_record::field_offset(
     return ret;
 }
 
+c_record::field const *c_record::find_field(char const *fname) const {
+    for (std::size_t i = 0; i < p_fields.size(); ++i) {
+        auto const &fld = p_fields[i];
+        if (fld.name.empty()) {
+            if (fld.type.type() == ast::C_BUILTIN_RECORD) {
+                auto const *sub = fld.type.record().find_field(fname);
+                if (sub) {
+                    return sub;
+                }
+            }
+        } else if (!std::strcmp(fld.name.data(), fname)) {
+            return &fld;
+        }
+    }
+    return nullptr;
+}
+
 static inline ffi_type *libffi_base(ast::c_type const &tp, std::size_t &asz) {
     if (!tp.builtin_array()) {
         asz = 1;
@@ -1091,7 +1108,7 @@ static inline ffi_type *libffi_base(ast::c_type const &tp, std::size_t &asz) {
 std::size_t c_record::iter_fields(bool (*cb)(
     char const *fname, ast::c_type const &type, std::size_t off, void *data
 ), void *data, std::size_t obase, bool &end) const {
-    std::size_t base = 0;
+    end = false;
     std::size_t nflds = p_fields.size();
     bool flex = false;
     bool uni = is_union();
@@ -1100,37 +1117,34 @@ std::size_t c_record::iter_fields(bool (*cb)(
          --nflds;
     }
     for (std::size_t i = 0; i < nflds; ++i) {
-        std::size_t asz;
-        auto *tp = libffi_base(p_fields[i].type, asz);
-        std::size_t align = tp->alignment;
-        base = ((base + align - 1) / align) * align;
-        if (p_fields[i].name.empty()) {
-            /* transparent record is like a real member */
-            assert(p_fields[i].type.type() == ast::C_BUILTIN_RECORD);
-            p_fields[i].type.record().iter_fields(cb, data, base, end);
-            if (end) {
-                return base;
+        auto const &fld = p_fields[i];
+        if (fld.name.empty()) {
+            if (fld.type.type() == ast::C_BUILTIN_RECORD) {
+                /* transparent record is like a real member */
+                fld.type.record().iter_fields(cb, data, obase + fld.offset, end);
+                if (end) {
+                    return obase + fld.offset;
+                }
             }
-        } else {
-            end = cb(
-                p_fields[i].name.data(), p_fields[i].type, obase + base, data
-            );
-            if (end) {
-                return base;
-            }
+            continue;
         }
-        if (!uni) {
-            base += tp->size * asz;
+        end = cb(
+            fld.name.data(), fld.type, obase + fld.offset, data
+        );
+        if (end) {
+            return obase + fld.offset;
         }
     }
     if (flex) {
-        base = p_ffi_type.size;
         end = cb(
             p_fields.back().name.data(), p_fields.back().type,
-            obase + base, data
+            obase + p_ffi_type.size, data
         );
+        if (end) {
+            return obase + p_ffi_type.size;
+        }
     }
-    return base;
+    return obase + p_ffi_type.size;
 }
 
 #if FFI_CPU(ARM64) || defined(FFI_ARCH_PPC64_ELFV2)
@@ -1286,7 +1300,107 @@ void c_record::set_fields(util::vector<field> fields) {
      * passing is allowed); alignment is handled manually
      */
     if (is_union()) {
+        std::size_t max_align = 1;
+        std::size_t max_size = 0;
+        for (std::size_t i = 0; i < p_fields.size(); ++i) {
+            auto &fld = p_fields[i];
+            fld.offset = 0;
+            std::size_t asz;
+            auto *ft = libffi_base(fld.type, asz);
+            std::size_t falign = p_packed ? 1 : ft->alignment;
+            if (falign > max_align) max_align = falign;
+            if ((ft->size * asz) > max_size) max_size = ft->size * asz;
+        }
+        if (p_packed) {
+            p_ffi_type.type = FFI_TYPE_STRUCT;
+            p_ffi_type.alignment = max_align;
+            std::size_t total_size = ((max_size + max_align - 1) / max_align) * max_align;
+            if (total_size == 0) total_size = max_align;
+            p_ffi_type.size = total_size;
+
+            ffi_type *ubase = nullptr;
+            auto check_ubase = [max_align](auto &tp) {
+                if (max_align % tp.alignment) return false;
+                return (tp.alignment >= tp.size);
+            };
+            if (check_ubase(ffi_type_uint64)) ubase = &ffi_type_uint64;
+            else if (check_ubase(ffi_type_uint32)) ubase = &ffi_type_uint32;
+            else if (check_ubase(ffi_type_uint16)) ubase = &ffi_type_uint16;
+            else ubase = &ffi_type_uint8;
+
+            std::size_t nelem = total_size / ubase->size;
+            std::size_t npad = total_size - (nelem * ubase->size);
+            p_elements = new ffi_type *[nelem + npad + 1];
+            for (std::size_t i = 0; i < nelem; ++i) p_elements[i] = ubase;
+            for (std::size_t i = 0; i < npad; ++i) p_elements[nelem + i] = &ffi_type_uchar;
+            p_elements[nelem + npad] = nullptr;
+            p_ffi_type.elements = &p_elements[0];
+            return;
+        }
         p_elements = resolve_union(p_fields, p_ffi_type);
+        return;
+    }
+
+    std::size_t bytepos = 0;
+    std::size_t max_align = 1;
+
+    for (std::size_t i = 0; i < p_fields.size(); ++i) {
+        auto &fld = p_fields[i];
+        std::size_t asz;
+        auto *ft = libffi_base(fld.type, asz);
+        std::size_t falign = p_packed ? 1 : ft->alignment;
+        if (falign > max_align) {
+            max_align = falign;
+        }
+        bytepos = ((bytepos + falign - 1) / falign) * falign;
+        fld.offset = bytepos;
+        bytepos += ft->size * asz;
+    }
+    std::size_t total_size = ((bytepos + max_align - 1) / max_align) * max_align;
+    if (total_size == 0) {
+        total_size = max_align;
+    }
+
+    if (p_packed) {
+        ffi_type *ubase = nullptr;
+        auto check_ubase = [max_align](auto &tp) {
+            if (max_align % tp.alignment) {
+                return false;
+            }
+            return (tp.alignment >= tp.size);
+        };
+        if (check_ubase(ffi_type_uint64)) {
+            ubase = &ffi_type_uint64;
+        } else if (check_ubase(ffi_type_uint32)) {
+            ubase = &ffi_type_uint32;
+        } else if (check_ubase(ffi_type_uint16)) {
+            ubase = &ffi_type_uint16;
+        } else {
+            ubase = &ffi_type_uint8;
+        }
+
+        std::size_t nelem = total_size / ubase->size;
+        std::size_t npad = total_size - (nelem * ubase->size);
+        p_elements = new ffi_type *[nelem + npad + 1];
+        for (std::size_t i = 0; i < nelem; ++i) {
+            p_elements[i] = ubase;
+        }
+        for (std::size_t i = 0; i < npad; ++i) {
+            p_elements[nelem + i] = &ffi_type_uchar;
+        }
+        p_elements[nelem + npad] = nullptr;
+
+        p_ffi_type.size = total_size;
+        p_ffi_type.alignment = max_align;
+        p_ffi_type.type = FFI_TYPE_STRUCT;
+        p_ffi_type.elements = &p_elements[0];
+
+        ffi_cif cif;
+        auto ret = ffi_prep_cif(
+            &cif, FFI_DEFAULT_ABI, 0, &p_ffi_type, nullptr
+        );
+        static_cast<void>(ret);
+        assert(ret == FFI_OK);
         return;
     }
 

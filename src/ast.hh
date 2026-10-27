@@ -996,16 +996,17 @@ struct c_record: c_object {
 
         util::strbuf name;
         c_type type;
+        std::size_t offset = 0;
     };
 
-    c_record(util::strbuf ename, util::vector<field> fields, bool is_uni = false):
-        p_name{util::move(ename)}, p_uni{is_uni}
+    c_record(util::strbuf ename, util::vector<field> fields, bool is_uni = false, bool is_pack = false):
+        p_name{util::move(ename)}, p_uni{is_uni}, p_packed{is_pack}
     {
         set_fields(util::move(fields));
     }
 
-    c_record(util::strbuf ename, bool is_uni = false):
-        p_name{util::move(ename)}, p_uni{is_uni}
+    c_record(util::strbuf ename, bool is_uni = false, bool is_pack = false):
+        p_name{util::move(ename)}, p_uni{is_uni}, p_packed{is_pack}
     {}
 
     ~c_record() {
@@ -1040,6 +1041,16 @@ struct c_record: c_object {
     bool is_same(c_record const &other) const;
 
     std::ptrdiff_t field_offset(char const *fname, c_type const *&fld) const;
+
+    field const *find_field(char const *fname) const;
+
+    bool packed() const {
+        return p_packed;
+    }
+
+    void packed(bool p) {
+        p_packed = p;
+    }
 
     bool opaque() const {
         return !p_elements;
@@ -1125,6 +1136,7 @@ private:
     int p_metatype = LUA_REFNIL;
     int p_metaflags = 0;
     bool p_uni;
+    bool p_packed = false;
 };
 
 struct c_enum: c_object {

@@ -981,6 +981,10 @@ struct cdata_meta {
 #endif /* LUA_VERSION_NUM > 502 */
 #endif /* LUA_VERSION_NUM > 501 */
 
+    static void *payload(void *ud) {
+        return static_cast<ffi::cdata *>(ud)->as_ptr();
+    }
+
     static void setup(lua_State *L) {
         if (!luaL_newmetatable(L, lua::CFFI_CDATA_MT)) {
             luaL_error(L, "unexpected error: registry reinitialized");
@@ -988,6 +992,9 @@ struct cdata_meta {
 
         lua_pushliteral(L, "ffi");
         lua_setfield(L, -2, "__metatable");
+
+        lua_pushlightuserdata(L, reinterpret_cast<void *>(payload));
+        lua_setfield(L, -2, "__cdata_payload");
 
         /* this will store registered permanent struct/union metatypes
          *

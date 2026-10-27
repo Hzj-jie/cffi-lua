@@ -67,3 +67,8 @@ assert(debug.getmetatable(s).__eq(s, 3) == true)
 assert(debug.getmetatable(s).__eq(s, nil) == true)
 local p = ffi.cast("eq_test_s *", 1)
 assert(debug.getmetatable(p).__eq(p, nil) == false)
+
+-- cdata payload accessor
+local payload_fn = debug.getmetatable(s).__cdata_payload
+assert(type(payload_fn) == "userdata")
+assert(payload_fn == debug.getmetatable(p).__cdata_payload)

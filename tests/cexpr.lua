@@ -27,3 +27,23 @@ assert(ffi.C.G == 64)
 assert(ffi.C.AC == 5)
 assert(ffi.C.ABC == 7)
 assert(ffi.C.ALL == 127)
+
+ffi.cdef [[
+    enum test_enum_bounds {
+        BOUND_NEG = -1,
+        BOUND_ZERO = 0,
+        BOUND_INT_MAX = 2147483647,
+        BOUND_UINT_SIGN = 2147483648,
+        BOUND_HEX = 0x80000000,
+        BOUND_UINT_MAX = 4294967295,
+        BOUND_HEX_MAX = 0xffffffff,
+    };
+]]
+
+assert(ffi.C.BOUND_NEG == -1)
+assert(ffi.C.BOUND_ZERO == 0)
+assert(ffi.C.BOUND_INT_MAX == 2147483647)
+assert(ffi.C.BOUND_UINT_SIGN == 2147483648)
+assert(ffi.C.BOUND_HEX == 2147483648)
+assert(ffi.C.BOUND_UINT_MAX == 4294967295)
+assert(ffi.C.BOUND_HEX_MAX == 4294967295)

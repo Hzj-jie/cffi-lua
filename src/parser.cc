@@ -445,7 +445,7 @@ private:
     template<typename T>
     bool check_int_fits(unsigned long long val) {
         using U = unsigned long long;
-        return (val <= U(~T(0)));
+        return (val <= U(util::limit_max<T>()));
     }
 
     /* this doesn't deal with stuff like negative values at all, that's
@@ -2486,6 +2486,7 @@ static ast::c_enum const *parse_enum(lex_state &ls) {
     }
 
     util::vector<ast::c_enum::field> fields;
+    bool last_is_uint = false;
 
     while (ls.t.token != '}') {
         int eln = ls.line_number;
@@ -2496,6 +2497,7 @@ static ast::c_enum const *parse_enum(lex_state &ls) {
         if (!ls.get()) {
             return nullptr;
         }
+        bool is_uint = false;
         if (ls.t.token == '=') {
             eln = ls.line_number;
             ast::c_expr exp;
@@ -2514,33 +2516,68 @@ static ast::c_enum const *parse_enum(lex_state &ls) {
                 }
             }
             /* for now large types just get truncated */
+
             switch (et) {
                 case ast::c_expr_type::INT: break;
-                case ast::c_expr_type::UINT: val.i = val.u; break;
-                case ast::c_expr_type::LONG: val.i = int(val.l); break;
-                case ast::c_expr_type::ULONG: val.i = int(val.ul); break;
-                case ast::c_expr_type::LLONG: val.i = int(val.ll); break;
-                case ast::c_expr_type::ULLONG: val.i = int(val.ull); break;
+                case ast::c_expr_type::UINT:
+                    val.i = val.u;
+                    if (val.u > INT32_MAX) {
+                        is_uint = true;
+                    }
+                    break;
+                case ast::c_expr_type::LONG:
+                    val.i = int(val.l);
+                    if (val.l > INT32_MAX && val.l <= UINT32_MAX) {
+                        is_uint = true;
+                    }
+                    break;
+                case ast::c_expr_type::ULONG:
+                    val.i = int(val.ul);
+                    if (val.ul > INT32_MAX && val.ul <= UINT32_MAX) {
+                        is_uint = true;
+                    }
+                    break;
+                case ast::c_expr_type::LLONG:
+                    val.i = int(val.ll);
+                    if (val.ll > INT32_MAX && val.ll <= UINT32_MAX) {
+                        is_uint = true;
+                    }
+                    break;
+                case ast::c_expr_type::ULLONG:
+                    val.i = int(val.ull);
+                    if (val.ull > INT32_MAX && val.ull <= UINT32_MAX) {
+                        is_uint = true;
+                    }
+                    break;
                 default:
                     ls.get_buf().set("unsupported type");
                     if (!ls.syntax_error()) {
                         return nullptr;
                     }
             }
+            last_is_uint = is_uint;
             fields.emplace_back(util::move(fname), val.i);
         } else {
             fields.emplace_back(
                 util::move(fname), fields.empty() ? 0 : (fields.back().value + 1)
             );
+            is_uint = last_is_uint && (static_cast<unsigned int>(fields.back().value) > INT32_MAX);
+            last_is_uint = is_uint;
         }
         /* enums: register fields as constant values
          * FIXME: don't hardcode like this
          */
         auto &fld = fields.back();
         ast::c_value fval;
-        fval.i = fld.value;
+        if (is_uint) {
+            fval.u = static_cast<unsigned int>(fld.value);
+        } else {
+            fval.i = fld.value;
+        }
         auto *p = new ast::c_constant{
-            fld.name, ast::c_type{ast::C_BUILTIN_INT, 0}, fval
+            fld.name,
+            ast::c_type{is_uint ? ast::C_BUILTIN_UINT : ast::C_BUILTIN_INT, 0},
+            fval
         };
         if (!ls.store_decl(p, eln)) {
             return nullptr;

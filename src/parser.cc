@@ -2044,7 +2044,6 @@ static bool parse_typebase_core(
     if (!parse_cv(ls, quals, tdef, extr, stat)) {
         return false;
     }
-    std::uint32_t squals = 0;
 
     /* parameterized types */
     if (ls.t.token == '$') {
@@ -2055,37 +2054,182 @@ static bool parse_typebase_core(
         return true;
     }
 
-    ast::c_builtin cbt = ast::C_BUILTIN_INVALID;
+    /* loop to collect free-order basic type specifiers and qualifiers */
+    int num_signed = 0;
+    int num_unsigned = 0;
+    int num_short = 0;
+    int num_long = 0;
+    int num_int = 0;
+    int num_char = 0;
+    int num_double = 0;
+    int num_float = 0;
+    int num_void = 0;
+    int num_bool = 0;
 
-    if (ls.t.token == TOK_signed || ls.t.token == TOK_unsigned) {
-        if (ls.t.token == TOK_signed) {
-            squals |= TYPE_SIGNED;
-        } else {
-            squals |= TYPE_UNSIGNED;
+    for (;;) {
+        switch (ls.t.token) {
+            case TOK_signed:
+                if (num_signed > 0 || num_unsigned > 0 || num_void > 0 || num_bool > 0 || num_float > 0 || num_double > 0) {
+                    goto basic_type_done;
+                }
+                num_signed++;
+                break;
+            case TOK_unsigned:
+                if (num_signed > 0 || num_unsigned > 0 || num_void > 0 || num_bool > 0 || num_float > 0 || num_double > 0) {
+                    goto basic_type_done;
+                }
+                num_unsigned++;
+                break;
+            case TOK_short:
+                if (num_short > 0 || num_long > 0 || num_char > 0 || num_void > 0 || num_bool > 0 || num_float > 0 || num_double > 0) {
+                    goto basic_type_done;
+                }
+                num_short++;
+                break;
+            case TOK_long:
+                if (num_long >= 2 || num_short > 0 || num_char > 0 || num_void > 0 || num_bool > 0 || num_float > 0) {
+                    goto basic_type_done;
+                }
+                if (num_double > 0 && num_long >= 1) {
+                    goto basic_type_done;
+                }
+                num_long++;
+                break;
+            case TOK_int:
+                if (num_int > 0 || num_char > 0 || num_void > 0 || num_bool > 0 || num_float > 0 || num_double > 0) {
+                    goto basic_type_done;
+                }
+                num_int++;
+                break;
+            case TOK_char:
+                if (num_char > 0 || num_short > 0 || num_long > 0 || num_int > 0 || num_void > 0 || num_bool > 0 || num_float > 0 || num_double > 0) {
+                    goto basic_type_done;
+                }
+                num_char++;
+                break;
+            case TOK_double:
+                if (num_double > 0 || num_short > 0 || num_int > 0 || num_char > 0 || num_void > 0 || num_bool > 0 || num_float > 0 || num_signed > 0 || num_unsigned > 0 || num_long > 1) {
+                    goto basic_type_done;
+                }
+                num_double++;
+                break;
+            case TOK_float:
+                if (num_float > 0 || num_double > 0 || num_short > 0 || num_long > 0 || num_int > 0 || num_char > 0 || num_void > 0 || num_bool > 0 || num_signed > 0 || num_unsigned > 0) {
+                    goto basic_type_done;
+                }
+                num_float++;
+                break;
+            case TOK_void:
+                if ((num_signed + num_unsigned + num_short + num_long + num_int + num_char + num_double + num_float + num_void + num_bool) > 0) {
+                    goto basic_type_done;
+                }
+                num_void++;
+                break;
+            case TOK_bool:
+            case TOK__Bool:
+                if ((num_signed + num_unsigned + num_short + num_long + num_int + num_char + num_double + num_float + num_void + num_bool) > 0) {
+                    goto basic_type_done;
+                }
+                num_bool++;
+                break;
+            case TOK_const:
+            case TOK___const__:
+                if (quals & ast::C_CV_CONST) {
+                    ls.get_buf().set("duplicate const qualifier");
+                    return ls.syntax_error();
+                }
+                quals |= ast::C_CV_CONST;
+                break;
+            case TOK_volatile:
+            case TOK___volatile__:
+                if (quals & ast::C_CV_VOLATILE) {
+                    ls.get_buf().set("duplicate volatile qualifier");
+                    return ls.syntax_error();
+                }
+                quals |= ast::C_CV_VOLATILE;
+                break;
+            default:
+                goto basic_type_done;
         }
         if (!ls.get()) {
             return false;
         }
-        /* when followed by char/short/int/long, it means signed/unsigned
-         * was used as a mere qualifier, so proceed with parsing the type
-         */
-        switch (ls.t.token) {
-            case TOK_char:
-            case TOK_short:
-            case TOK_int:
-            case TOK_long:
-                goto qualified;
-            default:
-                break;
+    }
+
+basic_type_done:
+    int total_basic = num_signed + num_unsigned + num_short + num_long +
+                      num_int + num_char + num_double + num_float + num_void + num_bool;
+    if (total_basic > 0) {
+        ast::c_builtin cbt = ast::C_BUILTIN_INVALID;
+        if (num_void > 0) {
+            if (num_void == 1 && total_basic == 1) {
+                cbt = ast::C_BUILTIN_VOID;
+            }
+        } else if (num_bool > 0) {
+            if (num_bool == 1 && total_basic == 1) {
+                cbt = ast::C_BUILTIN_BOOL;
+            }
+        } else if (num_float > 0) {
+            if (num_float == 1 && total_basic == 1) {
+                cbt = ast::C_BUILTIN_FLOAT;
+            }
+        } else if (num_double > 0) {
+            if (num_double == 1 && num_long == 1 && total_basic == 2) {
+                cbt = ast::C_BUILTIN_LDOUBLE;
+            } else if (num_double == 1 && total_basic == 1) {
+                cbt = ast::C_BUILTIN_DOUBLE;
+            }
+        } else if (num_char > 0) {
+            if (num_char == 1 && num_short == 0 && num_long == 0 && num_int == 0) {
+                if (num_signed == 1 && num_unsigned == 0) {
+                    cbt = ast::C_BUILTIN_SCHAR;
+                } else if (num_unsigned == 1 && num_signed == 0) {
+                    cbt = ast::C_BUILTIN_UCHAR;
+                } else if (num_signed == 0 && num_unsigned == 0) {
+                    cbt = ast::C_BUILTIN_CHAR;
+                }
+            }
+        } else if (num_short > 0) {
+            if (num_short == 1 && num_long == 0 && num_char == 0) {
+                if (num_unsigned > 0 && num_signed == 0) {
+                    cbt = ast::C_BUILTIN_USHORT;
+                } else {
+                    cbt = ast::C_BUILTIN_SHORT;
+                }
+            }
+        } else if (num_long == 2) {
+            if (num_short == 0 && num_char == 0) {
+                if (num_unsigned > 0 && num_signed == 0) {
+                    cbt = ast::C_BUILTIN_ULLONG;
+                } else {
+                    cbt = ast::C_BUILTIN_LLONG;
+                }
+            }
+        } else if (num_long == 1) {
+            if (num_short == 0 && num_char == 0) {
+                if (num_unsigned > 0 && num_signed == 0) {
+                    cbt = ast::C_BUILTIN_ULONG;
+                } else {
+                    cbt = ast::C_BUILTIN_LONG;
+                }
+            }
+        } else if (num_int > 0 || num_signed > 0 || num_unsigned > 0) {
+            if (num_unsigned > 0 && num_signed == 0) {
+                cbt = ast::C_BUILTIN_UINT;
+            } else {
+                cbt = ast::C_BUILTIN_INT;
+            }
         }
-        /* when not followed by that, treat them as a whole type */
-        if (squals & TYPE_SIGNED) {
-            cbt = ast::C_BUILTIN_INT;
-        } else {
-            cbt = ast::C_BUILTIN_UINT;
+
+        if (cbt == ast::C_BUILTIN_INVALID) {
+            ls.get_buf().set("invalid type combination");
+            return ls.syntax_error();
         }
-        goto newtype;
-    } else if ((ls.t.token == TOK_struct) || (ls.t.token == TOK_union)) {
+        ret = ast::c_type{cbt, quals};
+        return true;
+    }
+
+    if ((ls.t.token == TOK_struct) || (ls.t.token == TOK_union)) {
         auto *st = parse_record(ls);
         if (!st) {
             return false;
@@ -2101,7 +2245,6 @@ static bool parse_typebase_core(
         return true;
     }
 
-qualified:
     if (ls.t.token == TOK_NAME) {
         /* typedef, struct, enum, var, etc. */
         auto *decl = ls.lookup(ls.get_buf().data());
@@ -2142,146 +2285,68 @@ qualified:
                 return ls.syntax_error();
             }
         }
-    } else switch (ls.t.token) {
-        /* may be a builtin type */
-        case TOK_void:
-            cbt = ast::C_BUILTIN_VOID;
-            goto btype;
-        case TOK_int8_t:
-            cbt = ast::builtin_v<std::int8_t>;
-            goto btype;
-        case TOK_int16_t:
-            cbt = ast::builtin_v<std::int16_t>;
-            goto btype;
-        case TOK_int32_t:
-            cbt = ast::builtin_v<std::int32_t>;
-            goto btype;
-        case TOK_int64_t:
-            cbt = ast::builtin_v<std::int64_t>;
-            goto btype;
-        case TOK_uint8_t:
-            cbt = ast::builtin_v<std::uint8_t>;
-            goto btype;
-        case TOK_uint16_t:
-            cbt = ast::builtin_v<std::uint16_t>;
-            goto btype;
-        case TOK_uint32_t:
-            cbt = ast::builtin_v<std::uint32_t>;
-            goto btype;
-        case TOK_uint64_t:
-            cbt = ast::builtin_v<std::uint64_t>;
-            goto btype;
-        case TOK_uintptr_t:
-            cbt = ast::builtin_v<std::uintptr_t>;
-            goto btype;
-        case TOK_intptr_t:
-            cbt = ast::builtin_v<std::intptr_t>;
-            goto btype;
-        case TOK_ptrdiff_t:
-            cbt = ast::builtin_v<std::ptrdiff_t>;
-            goto btype;
-        case TOK_ssize_t:
-            cbt = ast::builtin_v<signed_size_t>;
-            goto btype;
-        case TOK_size_t:
-            cbt = ast::builtin_v<std::size_t>;
-            goto btype;
-        case TOK_va_list:
-        case TOK___builtin_va_list:
-        case TOK___gnuc_va_list:
-            cbt = ast::C_BUILTIN_VA_LIST;
-            goto btype;
-        case TOK_time_t:   cbt = ast::builtin_v<std::time_t>; goto btype;
-        case TOK_wchar_t:  cbt = ast::builtin_v<wchar_t>;  goto btype;
-        case TOK_char16_t: cbt = ast::builtin_v<char16_t>; goto btype;
-        case TOK_char32_t: cbt = ast::builtin_v<char32_t>; goto btype;
-        case TOK_float:    cbt = ast::C_BUILTIN_FLOAT;     goto btype;
-        case TOK_double:   cbt = ast::C_BUILTIN_DOUBLE;    goto btype;
-        case TOK_bool:
-        case TOK__Bool:
-            cbt = ast::C_BUILTIN_BOOL;
-        btype:
-            if (!ls.get()) {
-                return false;
-            }
-            break;
-        case TOK_char:
-            if (squals & TYPE_SIGNED) {
-                cbt = ast::C_BUILTIN_SCHAR;
-            } else if (squals & TYPE_UNSIGNED) {
-                cbt = ast::C_BUILTIN_UCHAR;
-            } else {
-                cbt = ast::C_BUILTIN_CHAR;
-            }
-            if (!ls.get()) {
-                return false;
-            }
-            break;
-        case TOK_short:
-            if (squals & TYPE_UNSIGNED) {
-                cbt = ast::C_BUILTIN_USHORT;
-            } else {
-                cbt = ast::C_BUILTIN_SHORT;
-            }
-            if (!ls.get()) {
-                return false;
-            }
-            if ((ls.t.token == TOK_int) && !ls.get()) {
-                return false;
-            }
-            break;
-        case TOK_int:
-            if (squals & TYPE_UNSIGNED) {
-                cbt = ast::C_BUILTIN_UINT;
-            } else {
-                cbt = ast::C_BUILTIN_INT;
-            }
-            if (!ls.get()) {
-                return false;
-            }
-            break;
-        case TOK_long:
-            if (!ls.get()) {
-                return false;
-            }
-            if (ls.t.token == TOK_long) {
-                if (squals & TYPE_UNSIGNED) {
-                    cbt = ast::C_BUILTIN_ULLONG;
-                } else {
-                    cbt = ast::C_BUILTIN_LLONG;
-                }
-                if (!ls.get()) {
-                    return false;
-                }
-            } else if (ls.t.token == TOK_int) {
-                if (squals & TYPE_UNSIGNED) {
-                    cbt = ast::C_BUILTIN_ULONG;
-                } else {
-                    cbt = ast::C_BUILTIN_LONG;
-                }
-                if (!ls.get()) {
-                    return false;
-                }
-            } else if (ls.t.token == TOK_double) {
-                cbt = ast::C_BUILTIN_LDOUBLE;
-                if (!ls.get()) {
-                    return false;
-                }
-            } else if (squals & TYPE_UNSIGNED) {
-                cbt = ast::C_BUILTIN_ULONG;
-            } else {
-                cbt = ast::C_BUILTIN_LONG;
-            }
-            break;
-        default:
-            ls.get_buf().set("type name expected");
-            return ls.syntax_error();
+    } else {
+        ast::c_builtin cbt = ast::C_BUILTIN_INVALID;
+        switch (ls.t.token) {
+            case TOK_int8_t:
+                cbt = ast::builtin_v<std::int8_t>;
+                break;
+            case TOK_int16_t:
+                cbt = ast::builtin_v<std::int16_t>;
+                break;
+            case TOK_int32_t:
+                cbt = ast::builtin_v<std::int32_t>;
+                break;
+            case TOK_int64_t:
+                cbt = ast::builtin_v<std::int64_t>;
+                break;
+            case TOK_uint8_t:
+                cbt = ast::builtin_v<std::uint8_t>;
+                break;
+            case TOK_uint16_t:
+                cbt = ast::builtin_v<std::uint16_t>;
+                break;
+            case TOK_uint32_t:
+                cbt = ast::builtin_v<std::uint32_t>;
+                break;
+            case TOK_uint64_t:
+                cbt = ast::builtin_v<std::uint64_t>;
+                break;
+            case TOK_uintptr_t:
+                cbt = ast::builtin_v<std::uintptr_t>;
+                break;
+            case TOK_intptr_t:
+                cbt = ast::builtin_v<std::intptr_t>;
+                break;
+            case TOK_ptrdiff_t:
+                cbt = ast::builtin_v<std::ptrdiff_t>;
+                break;
+            case TOK_ssize_t:
+                cbt = ast::builtin_v<signed_size_t>;
+                break;
+            case TOK_size_t:
+                cbt = ast::builtin_v<std::size_t>;
+                break;
+            case TOK_va_list:
+            case TOK___builtin_va_list:
+            case TOK___gnuc_va_list:
+                cbt = ast::C_BUILTIN_VA_LIST;
+                break;
+            case TOK_time_t:   cbt = ast::builtin_v<std::time_t>; break;
+            case TOK_wchar_t:  cbt = ast::builtin_v<wchar_t>;  break;
+            case TOK_char16_t: cbt = ast::builtin_v<char16_t>; break;
+            case TOK_char32_t: cbt = ast::builtin_v<char32_t>; break;
+            default:
+                ls.get_buf().set("type name expected");
+                return ls.syntax_error();
+        }
+        if (!ls.get()) {
+            return false;
+        }
+        assert(cbt != ast::C_BUILTIN_INVALID);
+        ret = ast::c_type{cbt, quals};
+        return true;
     }
-
-newtype:
-    assert(cbt != ast::C_BUILTIN_INVALID);
-    ret = ast::c_type{cbt, quals};
-    return true;
 }
 
 static bool parse_typebase(

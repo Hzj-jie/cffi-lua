@@ -79,3 +79,21 @@ assert(ffi.cast("int", 150) == ffi.cast("type1_t", 150))
 assert(ffi.cast("unsigned long", 150) == ffi.cast("type2_t", 150))
 assert(ffi.cast("signed", 150) == ffi.cast("type3_t", 150))
 assert(ffi.cast("time_t", 150) == ffi.cast("type4_t", 150))
+
+-- free-order basic type specifiers
+
+ffi.cdef [[
+    typedef long unsigned int free_lu_t;
+    typedef long signed int free_ls_t;
+    typedef short unsigned int free_su_t;
+    typedef unsigned long long int free_ull_t;
+    typedef int long free_il_t;
+    typedef int signed free_is_t;
+]]
+
+assert(ffi.sizeof("free_lu_t") == ffi.sizeof("unsigned long"))
+assert(ffi.sizeof("free_ls_t") == ffi.sizeof("long"))
+assert(ffi.sizeof("free_su_t") == ffi.sizeof("unsigned short"))
+assert(ffi.sizeof("free_ull_t") == ffi.sizeof("unsigned long long"))
+assert(ffi.sizeof("free_il_t") == ffi.sizeof("long"))
+assert(ffi.sizeof("free_is_t") == ffi.sizeof("int"))

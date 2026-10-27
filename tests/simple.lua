@@ -11,3 +11,8 @@ assert(ret == 11)
 
 local ret = ffi.tonumber(L.test_strlen_void("hello world"))
 assert(ret == 11)
+
+-- verify luaopen_ffi entrypoint is exported
+local tl_path = os.getenv("CFFI_PATH") or "./build"
+local open_fn = package.loadlib(tl_path .. "/cffi.so", "luaopen_ffi")
+assert(type(open_fn) == "function")

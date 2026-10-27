@@ -30,3 +30,8 @@ extern "C" CFFI_LUA_EXPORT int luaopen_cffi(lua_State *L) {
     ffi_module_open(L);
     return 1;
 }
+
+extern "C" CFFI_LUA_EXPORT int luaopen_ffi(lua_State *L) {
+    ffi_module_open(L);
+    return 1;
+}

@@ -47,3 +47,14 @@ ffi.cdef [[
     } __attribute__((unused));
 ]]
 assert(ffi.sizeof("struct attr_s") == 8)
+
+-- test restrict qualifiers
+ffi.cdef [[
+    struct restrict_s {
+        uint8_t * restrict data;
+        const void * __restrict src;
+        int * __restrict__ dst;
+        void (*copy_fn)(void * restrict dst, const void * __restrict src, int * __restrict__ count);
+    };
+]]
+assert(ffi.sizeof("struct restrict_s") == 4 * ffi.sizeof("void *"))

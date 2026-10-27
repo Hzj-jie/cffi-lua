@@ -19,6 +19,7 @@ namespace parser {
     KW(_Alignas), \
     \
     KW(__alignof__), KW(__const__), KW(__volatile__), \
+    KW(restrict), KW(__restrict), KW(__restrict__), \
     \
     KW(__attribute__), KW(__extension__), KW(__asm__), \
     \
@@ -1335,6 +1336,13 @@ static bool parse_cv(
             }
             ret |= ast::C_CV_VOLATILE;
             break;
+        case TOK_restrict:
+        case TOK___restrict:
+        case TOK___restrict__:
+            if (!ls.get()) {
+                return false;
+            }
+            break;
         case TOK_typedef:
             if (!tdef) {
                 return true;
@@ -2163,6 +2171,10 @@ static bool parse_typebase_core(
                     return ls.syntax_error();
                 }
                 quals |= ast::C_CV_VOLATILE;
+                break;
+            case TOK_restrict:
+            case TOK___restrict:
+            case TOK___restrict__:
                 break;
             default:
                 goto basic_type_done;

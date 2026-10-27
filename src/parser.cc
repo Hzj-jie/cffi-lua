@@ -2498,6 +2498,16 @@ static ast::c_record const *parse_record(lex_state &ls, bool *newst) {
             if (!parse_type_ptr(ls, tp, &fpn, false, false, tdef_bltin)) {
                 return nullptr;
             }
+            ast::c_type const *btp = &tp;
+            while (btp->builtin_array()) {
+                btp = &btp->ptr_base();
+            }
+            if (btp->type() == ast::C_BUILTIN_RECORD && btp->record().opaque()) {
+                ls.get_buf().set("field has incomplete type");
+                if (!ls.syntax_error()) {
+                    return nullptr;
+                }
+            }
             int bwidth = -1;
             if (test_next(ls, ':')) {
                 ast::c_expr exp;

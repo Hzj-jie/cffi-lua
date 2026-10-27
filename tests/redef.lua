@@ -69,3 +69,24 @@ ffi.cdef [[
 -- optional trailing semicolon before end of input
 ffi.cdef("struct noscolon { int a; }")
 assert(ffi.sizeof("struct noscolon") == ffi.sizeof("int"))
+
+-- record fields with incomplete type must raise a parse error
+ffi.cdef [[
+    struct incomplete_forward;
+]]
+
+local ret, msg = pcall(ffi.cdef, [[
+    struct has_incomplete {
+        struct incomplete_forward f;
+    };
+]])
+assert(not ret)
+assert(msg:find("field has incomplete type"))
+
+local ret, msg = pcall(ffi.cdef, [[
+    struct has_incomplete_arr {
+        struct incomplete_forward f[5];
+    };
+]])
+assert(not ret)
+assert(msg:find("field has incomplete type"))

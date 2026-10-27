@@ -778,7 +778,23 @@ struct cdata_meta {
         auto *cd1 = ffi::testcval(L, 1);
         auto *cd2 = ffi::testcval(L, 2);
         if (!cd1 || !cd2) {
-            /* equality against non-cdata object is always false */
+            auto *ccd = (cd1 ? cd1 : cd2);
+            if (ccd->gc_ref == lua::CFFI_CTYPE_TAG) {
+                lua_pushboolean(L, false);
+                return 1;
+            }
+            int other_idx = 2 - !cd1;
+            if (lua_isnil(L, other_idx) && ccd->decl.ptr_like()) {
+                lua_pushboolean(L, ccd->as_deref<void *>() == nullptr);
+                return 1;
+            }
+            if (op_try_mt<ffi::METATYPE_FLAG_EQ>(L, cd1, cd2)) {
+                return 1;
+            }
+            if (ccd->decl.arith() && (lua_type(L, other_idx) == LUA_TNUMBER)) {
+                arith_64bit_cmp(L, ast::c_expr_binop::EQ);
+                return 1;
+            }
             lua_pushboolean(L, false);
             return 1;
         }

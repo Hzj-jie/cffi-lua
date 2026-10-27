@@ -49,3 +49,21 @@ assert(x.y == 1000)
 assert(x:sum() == 1500)
 
 assert(new_called == 2)
+
+-- metatype __eq with non-cdata
+ffi.cdef [[
+    typedef struct eq_test_s {
+        int a;
+    } eq_test_s;
+]]
+local eq_t = ffi.metatype("eq_test_s", {
+    __eq = function(a, b)
+        return true
+    end,
+})
+local s = eq_t(1)
+assert(debug.getmetatable(s).__eq(s, {}) == true)
+assert(debug.getmetatable(s).__eq(s, 3) == true)
+assert(debug.getmetatable(s).__eq(s, nil) == true)
+local p = ffi.cast("eq_test_s *", 1)
+assert(debug.getmetatable(p).__eq(p, nil) == false)

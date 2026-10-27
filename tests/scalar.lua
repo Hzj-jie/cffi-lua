@@ -97,3 +97,13 @@ assert(ffi.sizeof("free_su_t") == ffi.sizeof("unsigned short"))
 assert(ffi.sizeof("free_ull_t") == ffi.sizeof("unsigned long long"))
 assert(ffi.sizeof("free_il_t") == ffi.sizeof("long"))
 assert(ffi.sizeof("free_is_t") == ffi.sizeof("int"))
+
+-- metatable __eq comparisons with non-cdata
+local mt = debug.getmetatable(ffi.new("int"))
+assert(mt.__eq(ffi.cast("void *", 0), nil) == true)
+assert(mt.__eq(nil, ffi.cast("void *", 0)) == true)
+assert(mt.__eq(ffi.cast("void *", 1), nil) == false)
+assert(mt.__eq(ffi.new("uint64_t", 0), 0) == true)
+assert(mt.__eq(0, ffi.new("uint64_t", 0)) == true)
+assert(mt.__eq(ffi.new("int", 5), 6) == false)
+assert(mt.__eq(ffi.new("int", 5), "5") == false)

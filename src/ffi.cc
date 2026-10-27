@@ -726,6 +726,14 @@ static inline bool ptr_convertible(
     ) {
         return ptr_convertible(fpb, tpb);
     }
+    if (
+        fpb.integer() && tpb.integer() &&
+        (fpb.type() != ast::C_BUILTIN_BOOL) &&
+        (tpb.type() != ast::C_BUILTIN_BOOL) &&
+        (fpb.alloc_size() == tpb.alloc_size())
+    ) {
+        return true;
+    }
     return fpb.is_same(tpb, true, true);
 }
 

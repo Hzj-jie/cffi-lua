@@ -53,3 +53,33 @@ assert(ffi.string(t.v, 3) == "abc")
 
 assert(not pcall(function() t.mut_u = "abc" end))
 assert(not pcall(function() t.u16 = "abc" end))
+
+-- pointer conversion between same-size integer types
+
+ffi.cdef [[
+    struct test_ptr_assign {
+        unsigned int *u;
+        unsigned char **ucp;
+        const unsigned int *cu;
+    };
+]]
+local pa = ffi.new("struct test_ptr_assign")
+local i1 = ffi.new("int[1]")
+pa.u = i1
+assert(pa.u == ffi.cast("unsigned int *", i1))
+
+local cp1 = ffi.new("char *[1]")
+pa.ucp = cp1
+
+pa.cu = i1
+
+assert(not pcall(function() pa.u = ffi.new("char[4]") end))
+assert(not pcall(function() pa.u = ffi.new("short[1]") end))
+assert(not pcall(function() pa.u = ffi.new("int64_t[1]") end))
+assert(not pcall(function() pa.u = ffi.new("float[1]") end))
+assert(not pcall(function() pa.u = ffi.cast("const int *", i1) end))
+assert(not pcall(function()
+    local b = ffi.new("bool[1]")
+    local p2 = ffi.new("struct { unsigned char *p; }")
+    p2.p = b
+end))

@@ -47,3 +47,18 @@ assert(ffi.C.BOUND_UINT_SIGN == 2147483648)
 assert(ffi.C.BOUND_HEX == 2147483648)
 assert(ffi.C.BOUND_UINT_MAX == 4294967295)
 assert(ffi.C.BOUND_HEX_MAX == 4294967295)
+
+ffi.cdef [[
+    static const int SC_A = 4294967295;
+    static const int SC_B = 2147483648;
+    static const int SC_C = 0x80000000;
+    static const unsigned int SC_U = 0xFFFFFFFF;
+    static const int SC_MULTI_1 = 10, SC_MULTI_2 = 20;
+]]
+
+assert(ffi.C.SC_A == -1)
+assert(ffi.C.SC_B == -2147483648)
+assert(ffi.C.SC_C == -2147483648)
+assert(ffi.C.SC_U == 4294967295)
+assert(ffi.C.SC_MULTI_1 == 10)
+assert(ffi.C.SC_MULTI_2 == 20)

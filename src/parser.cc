@@ -13,7 +13,7 @@ namespace parser {
 
 /* stdint types might as well also be builtin... */
 #define KEYWORDS KW(alignof), KW(alignas), KW(auto), KW(const), KW(enum), \
-    KW(extern), KW(sizeof), KW(struct), KW(signed), KW(typedef), KW(union), \
+    KW(extern), KW(sizeof), KW(static), KW(struct), KW(signed), KW(typedef), KW(union), \
     KW(unsigned), KW(volatile), KW(void), \
     \
     KW(_Alignas), \
@@ -1317,7 +1317,7 @@ done:
 
 static bool parse_cv(
     lex_state &ls, std::uint32_t &ret,
-    bool *tdef = nullptr, bool *extr = nullptr
+    bool *tdef = nullptr, bool *extr = nullptr, bool *stat = nullptr
 ) {
     ret = 0;
     for (;;) switch (ls.t.token) {
@@ -1368,6 +1368,19 @@ static bool parse_cv(
                 return false;
             }
             *extr = true;
+            break;
+        case TOK_static:
+            if (!stat) {
+                return true;
+            }
+            if (*stat) {
+                ls.get_buf().set("duplicate static qualifier");
+                return ls.syntax_error();
+            }
+            if (!ls.get()) {
+                return false;
+            }
+            *stat = true;
             break;
         default:
             goto end;
@@ -2024,11 +2037,11 @@ using signed_size_t = util::conditional_t<
 >;
 
 static bool parse_typebase_core(
-    lex_state &ls, ast::c_type &ret, bool *tdef, bool *extr
+    lex_state &ls, ast::c_type &ret, bool *tdef, bool *extr, bool *stat = nullptr
 ) {
     /* left-side cv */
     std::uint32_t quals = 0;
-    if (!parse_cv(ls, quals, tdef, extr)) {
+    if (!parse_cv(ls, quals, tdef, extr, stat)) {
         return false;
     }
     std::uint32_t squals = 0;
@@ -2272,14 +2285,15 @@ newtype:
 }
 
 static bool parse_typebase(
-    lex_state &ls, ast::c_type &ret, bool *tdef = nullptr, bool *extr = nullptr
+    lex_state &ls, ast::c_type &ret,
+    bool *tdef = nullptr, bool *extr = nullptr, bool *stat = nullptr
 ) {
-    if (!parse_typebase_core(ls, ret, tdef, extr)) {
+    if (!parse_typebase_core(ls, ret, tdef, extr, stat)) {
         return false;
     }
     /* right-side cv that can always apply */
     std::uint32_t cv = 0;
-    if (!parse_cv(ls, cv, tdef, extr)) {
+    if (!parse_cv(ls, cv, tdef, extr, stat)) {
         return false;
     }
     ret.cv(cv);
@@ -2616,10 +2630,79 @@ static bool parse_decl(lex_state &ls) {
     if (!parse_callconv_attrib(ls, cconv)) {
         return false;
     }
-    bool tdef = false, extr = false;
+    bool tdef = false, extr = false, stat = false;
     ast::c_type tpb{};
-    if (!parse_typebase(ls, tpb, &tdef, &extr)) {
+    if (!parse_typebase(ls, tpb, &tdef, &extr, &stat)) {
         return false;
+    }
+    if (stat) {
+        if (!(tpb.cv() & ast::C_CV_CONST) || !tpb.integer()) {
+            ls.get_buf().set("static const requires integral type");
+            return ls.syntax_error();
+        }
+        do {
+            int eln = ls.line_number;
+            if (!check(ls, TOK_NAME)) {
+                return false;
+            }
+            util::strbuf cname{ls.get_buf()};
+            if (!ls.get()) {
+                return false;
+            }
+            if (!check_next(ls, '=')) {
+                return false;
+            }
+            ast::c_expr exp;
+            if (!parse_cexpr(ls, exp)) {
+                return false;
+            }
+            ast::c_expr_type et;
+            ast::c_value val;
+            if (!exp.eval(ls.lua_state(), val, et, true)) {
+                std::size_t strl;
+                char const *errm = lua_tolstring(ls.lua_state(), -1, &strl);
+                ls.get_buf().set(errm, strl);
+                lua_pop(ls.lua_state(), 1);
+                return ls.syntax_error();
+            }
+            uint64_t raw_val = 0;
+            switch (et) {
+                case ast::c_expr_type::INT: raw_val = static_cast<uint64_t>(static_cast<int64_t>(val.i)); break;
+                case ast::c_expr_type::UINT: raw_val = static_cast<uint64_t>(val.u); break;
+                case ast::c_expr_type::LONG: raw_val = static_cast<uint64_t>(static_cast<int64_t>(val.l)); break;
+                case ast::c_expr_type::ULONG: raw_val = static_cast<uint64_t>(val.ul); break;
+                case ast::c_expr_type::LLONG: raw_val = static_cast<uint64_t>(static_cast<int64_t>(val.ll)); break;
+                case ast::c_expr_type::ULLONG: raw_val = val.ull; break;
+                case ast::c_expr_type::CHAR: raw_val = static_cast<uint64_t>(static_cast<int64_t>(val.c)); break;
+                case ast::c_expr_type::BOOL: raw_val = val.b ? 1 : 0; break;
+                default:
+                    ls.get_buf().set("unsupported type for constant");
+                    return ls.syntax_error();
+            }
+            ast::c_value fval{};
+            switch (tpb.type()) {
+                case ast::C_BUILTIN_BOOL: fval.b = (raw_val != 0); break;
+                case ast::C_BUILTIN_CHAR: fval.c = static_cast<char>(raw_val); break;
+                case ast::C_BUILTIN_SCHAR: fval.sc = static_cast<signed char>(raw_val); break;
+                case ast::C_BUILTIN_UCHAR: fval.uc = static_cast<unsigned char>(raw_val); break;
+                case ast::C_BUILTIN_SHORT: fval.s = static_cast<short>(raw_val); break;
+                case ast::C_BUILTIN_USHORT: fval.us = static_cast<unsigned short>(raw_val); break;
+                case ast::C_BUILTIN_INT: fval.i = static_cast<int>(raw_val); break;
+                case ast::C_BUILTIN_UINT: fval.u = static_cast<unsigned int>(raw_val); break;
+                case ast::C_BUILTIN_LONG: fval.l = static_cast<long>(raw_val); break;
+                case ast::C_BUILTIN_ULONG: fval.ul = static_cast<unsigned long>(raw_val); break;
+                case ast::C_BUILTIN_LLONG: fval.ll = static_cast<long long>(raw_val); break;
+                case ast::C_BUILTIN_ULLONG: fval.ull = raw_val; break;
+                default: fval.i = static_cast<int>(raw_val); break;
+            }
+            auto *p = new ast::c_constant{
+                util::move(cname), tpb.copy(), fval
+            };
+            if (!ls.store_decl(p, eln)) {
+                return false;
+            }
+        } while (test_next(ls, ','));
+        return true;
     }
     bool first = true;
     do {

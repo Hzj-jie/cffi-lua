@@ -1138,10 +1138,10 @@ std::size_t c_record::iter_fields(bool (*cb)(
     if (flex) {
         end = cb(
             p_fields.back().name.data(), p_fields.back().type,
-            obase + p_ffi_type.size, data
+            obase + p_fields.back().offset, data
         );
         if (end) {
-            return obase + p_ffi_type.size;
+            return obase + p_fields.back().offset;
         }
     }
     return obase + p_ffi_type.size;
@@ -1517,6 +1517,9 @@ void c_record::set_fields(util::vector<field> fields) {
 
     /* alignment of the base type of the final array */
     auto falign = p_fields.back().type.ptr_base().libffi_type()->alignment;
+    if (falign > p_ffi_type.alignment) {
+        p_ffi_type.alignment = falign;
+    }
     auto padn = p_ffi_type.size % falign;
 
     /* the current size is an actual multiple, so no padding needed */

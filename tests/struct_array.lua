@@ -244,3 +244,15 @@ local bs2 = ffi.new("struct bitfield_s", { a = 3, b = 15, c = 99 })
 assert(bs2.a == 3)
 assert(bs2.b == 15)
 assert(bs2.c == 99)
+
+-- flexible array member offset with tail padding
+ffi.cdef [[
+    struct flex_tail_s {
+        double d;
+        char c;
+        char data[];
+    };
+]]
+assert(ffi.sizeof("struct flex_tail_s") == 16)
+assert(ffi.alignof("struct flex_tail_s") == 8)
+assert(ffi.offsetof("struct flex_tail_s", "data") == 9)

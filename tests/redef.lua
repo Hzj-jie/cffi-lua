@@ -65,3 +65,7 @@ ffi.cdef [[
 ffi.cdef [[
     enum {QUX = 3};
 ]]
+
+-- optional trailing semicolon before end of input
+ffi.cdef("struct noscolon { int a; }")
+assert(ffi.sizeof("struct noscolon") == ffi.sizeof("int"))

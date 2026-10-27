@@ -2853,7 +2853,7 @@ static bool parse_decls(lex_state &ls) {
         if (!parse_decl(ls)) {
             return false;
         }
-        if (!ls.t.token) {
+        if (ls.t.token <= 0) {
             break;
         }
         if (!check_next(ls, ';')) {

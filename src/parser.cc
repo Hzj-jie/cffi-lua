@@ -783,19 +783,11 @@ cont:
             /* (, (( */
             case '(': {
                 next_char();
-                if ((p_mode == PARSE_MODE_ATTRIB) && (current == '(')) {
-                    next_char();
-                    return TOK_ATTRIBB;
-                }
                 return '(';
             }
             /* ), )) */
             case ')': {
                 next_char();
-                if ((p_mode == PARSE_MODE_ATTRIB) && (current == ')')) {
-                    next_char();
-                    return TOK_ATTRIBE;
-                }
                 return ')';
             }
             /* -, -> */
@@ -1389,42 +1381,79 @@ end:
     return true;
 }
 
-static bool parse_callconv_attrib(lex_state &ls, std::uint32_t &ret) {
-    if (ls.t.token != TOK___attribute__) {
-        ret = ast::C_FUNC_DEFAULT;
-        return true;
+static bool parse_attributes(
+    lex_state &ls, std::uint32_t *cconv = nullptr, bool *packed = nullptr, std::uint32_t *aligned = nullptr
+) {
+    static_cast<void>(aligned);
+    while (ls.t.token == TOK___attribute__) {
+        if (!ls.get()) {
+            return false;
+        }
+        int lnum = ls.line_number;
+        if (!check_next(ls, '(') || !check_next(ls, '(')) {
+            return false;
+        }
+        while (ls.t.token != ')') {
+            if (ls.t.token <= 0) {
+                ls.get_buf().set("unexpected end of file in attribute");
+                return ls.syntax_error();
+            }
+            if (ls.t.token == ',') {
+                if (!ls.get()) return false;
+                continue;
+            }
+            if (ls.t.token == TOK_NAME || (ls.t.token >= TOK_alignof && ls.t.token <= TOK_volatile)) {
+                util::strbuf aname = ls.get_buf();
+                if (!ls.get()) return false;
+                char const *an = aname.data();
+                std::size_t len = aname.size();
+                if (len >= 4 && an[0] == '_' && an[1] == '_' && an[len - 2] == '_' && an[len - 1] == '_') {
+                    aname = util::strbuf(an + 2, len - 4);
+                }
+                char const *name = aname.data();
+                if (cconv) {
+                    if (!std::strcmp(name, "cdecl")) {
+                        *cconv = ast::C_FUNC_CDECL;
+                    } else if (!std::strcmp(name, "fastcall")) {
+                        *cconv = ast::C_FUNC_FASTCALL;
+                    } else if (!std::strcmp(name, "stdcall")) {
+                        *cconv = ast::C_FUNC_STDCALL;
+                    } else if (!std::strcmp(name, "thiscall")) {
+                        *cconv = ast::C_FUNC_THISCALL;
+                    }
+                }
+                if (packed && !std::strcmp(name, "packed")) {
+                    *packed = true;
+                }
+                if (ls.t.token == '(') {
+                    int depth = 1;
+                    if (!ls.get()) return false;
+                    while (depth > 0) {
+                        if (ls.t.token == '(') {
+                            depth++;
+                        } else if (ls.t.token == ')') {
+                            depth--;
+                        } else if (ls.t.token <= 0) {
+                            ls.get_buf().set("unexpected end of file in attribute");
+                            return ls.syntax_error();
+                        }
+                        if (!ls.get()) return false;
+                    }
+                }
+            } else {
+                if (!ls.get()) return false;
+            }
+        }
+        if (!check_match(ls, ')', '(', lnum) || !check_match(ls, ')', '(', lnum)) {
+            return false;
+        }
     }
-    int omod = ls.mode(PARSE_MODE_ATTRIB);
-    if (!ls.get()) {
-        return false;
-    }
-    int ln = ls.line_number;
-    if (!check_next(ls, TOK_ATTRIBB)) {
-        return false;
-    }
-    std::uint32_t conv;
-    if (!check(ls, TOK_NAME)) {
-        return false;
-    }
-    auto &b = ls.get_buf();
-    if (!std::strcmp(b.data(), "cdecl")) {
-        conv = ast::C_FUNC_CDECL;
-    } else if (!std::strcmp(b.data(), "fastcall")) {
-        conv = ast::C_FUNC_FASTCALL;
-    } else if (!std::strcmp(b.data(), "stdcall")) {
-        conv = ast::C_FUNC_STDCALL;
-    } else if (!std::strcmp(b.data(), "thiscall")) {
-        conv = ast::C_FUNC_THISCALL;
-    } else {
-        b.set("invalid calling convention");
-        return ls.syntax_error();
-    }
-    if (!ls.get() || !check_match(ls, TOK_ATTRIBE, TOK_ATTRIBB, ln)) {
-        return false;
-    }
-    ls.mode(omod);
-    ret = conv;
     return true;
+}
+
+static bool parse_callconv_attrib(lex_state &ls, std::uint32_t &ret) {
+    ret = ast::C_FUNC_DEFAULT;
+    return parse_attributes(ls, &ret, nullptr, nullptr);
 }
 
 static bool parse_callconv_ms(lex_state &ls, std::uint32_t &ret) {
@@ -2379,6 +2408,10 @@ static ast::c_record const *parse_record(lex_state &ls, bool *newst) {
     if (!ls.get()) {
         return nullptr;
     }
+    bool is_pack = false;
+    if (!parse_attributes(ls, nullptr, &is_pack, nullptr)) {
+        return nullptr;
+    }
     /* name is optional */
     bool named = false;
     util::strbuf sname{is_uni ? "union " : "struct "};
@@ -2397,6 +2430,9 @@ static ast::c_record const *parse_record(lex_state &ls, bool *newst) {
         static_cast<void>(wn); /* silence NDEBUG warnings */
         assert(wn < sizeof(buf));
         sname.append(buf);
+    }
+    if (!parse_attributes(ls, nullptr, &is_pack, nullptr)) {
+        return nullptr;
     }
 
     int linenum = ls.line_number;
@@ -2462,6 +2498,9 @@ static ast::c_record const *parse_record(lex_state &ls, bool *newst) {
             if (!parse_type_ptr(ls, tp, &fpn, false, false, tdef_bltin)) {
                 return nullptr;
             }
+            if (!parse_attributes(ls)) {
+                return nullptr;
+            }
             if (fpn[0] == '?') {
                 /* nameless field declarations do nothing */
                 goto field_end;
@@ -2484,6 +2523,9 @@ field_end:
     }
 
     if (!check_match(ls, '}', '{', linenum)) {
+        return nullptr;
+    }
+    if (!parse_attributes(ls, nullptr, &is_pack, nullptr)) {
         return nullptr;
     }
 
@@ -2515,6 +2557,9 @@ static ast::c_enum const *parse_enum(lex_state &ls) {
     if (!ls.get()) {
         return nullptr;
     }
+    if (!parse_attributes(ls)) {
+        return nullptr;
+    }
     /* name is optional */
     bool named = false;
     util::strbuf ename{"enum "};
@@ -2533,6 +2578,9 @@ static ast::c_enum const *parse_enum(lex_state &ls) {
         static_cast<void>(wn); /* silence NDEBUG warnings */
         assert(wn < sizeof(buf));
         ename.append(buf);
+    }
+    if (!parse_attributes(ls)) {
+        return nullptr;
     }
 
     int linenum = ls.line_number;
@@ -2671,6 +2719,9 @@ static ast::c_enum const *parse_enum(lex_state &ls) {
     if (!check_match(ls, '}', '{', linenum)) {
         return nullptr;
     }
+    if (!parse_attributes(ls)) {
+        return nullptr;
+    }
 
     auto *oldecl = ls.lookup(ename.data());
     if (oldecl && (oldecl->obj_type() == ast::c_object_type::ENUM)) {
@@ -2782,6 +2833,13 @@ static bool parse_decl(lex_state &ls) {
             return false;
         }
         first = false;
+        std::uint32_t post_cconv = ast::C_FUNC_DEFAULT;
+        if (!parse_attributes(ls, &post_cconv, nullptr, nullptr)) {
+            return false;
+        }
+        if (post_cconv != ast::C_FUNC_DEFAULT) {
+            cconv = post_cconv;
+        }
         if (cconv != ast::C_FUNC_DEFAULT) {
             if (tp.type() != ast::C_BUILTIN_FUNC) {
                 ls.get_buf().set(

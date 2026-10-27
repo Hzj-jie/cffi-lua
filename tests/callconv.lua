@@ -32,3 +32,18 @@ local fp2 = ffi.cast("int (*)(int, int) __attribute__((fastcall))", L.test_fastc
 
 assert(fp1(15, 20) == 35)
 assert(fp2(15, 20) == 35)
+
+-- test generic GCC attributes
+ffi.cdef [[
+    int test_attr1(int) __attribute__((nothrow, leaf));
+    __attribute__((visibility("default"))) int test_attr2(int);
+    struct attr_s {
+        int a __attribute__((unused));
+        int b __attribute__((__unused__));
+    } __attribute__((aligned(8)));
+    enum attr_e {
+        VAL_A,
+        VAL_B,
+    } __attribute__((unused));
+]]
+assert(ffi.sizeof("struct attr_s") == 8)

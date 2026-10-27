@@ -1188,7 +1188,7 @@ static void from_lua_table_record(
     bool filled = false;
     bool empty = true;
     sb.iter_fields([
-        L, rsz, val, &decl, &sidx, &filled, &empty, &ninit, tidx, uni
+        L, rsz, val, &decl, &sb, &sidx, &filled, &empty, &ninit, tidx, uni
     ](
         char const *fname, ast::c_type const &fld, std::size_t off
     ) {
@@ -1230,12 +1230,39 @@ static void from_lua_table_record(
             }
             return true;
         }
-        bool elem_struct = (fld.type() == ast::C_BUILTIN_RECORD);
-        bool elem_arr = (fld.type() == ast::C_BUILTIN_ARRAY);
-        if ((elem_arr || elem_struct) && lua_istable(L, -1)) {
-            from_lua_table(L, fld, &val[off], fld.alloc_size(), lua_gettop(L));
+        auto const *rfld = sb.find_field(fname);
+        if (rfld && rfld->bit_width >= 0) {
+            lua_Integer in_val = lua_tointeger(L, -1);
+            uint64_t uval = static_cast<uint64_t>(in_val);
+            int bit_off = rfld->bit_offset;
+            int bit_w = rfld->bit_width;
+            uint64_t mask = (bit_w >= 64) ? ~uint64_t(0) : ((uint64_t(1) << bit_w) - 1);
+            uval = (uval & mask) << bit_off;
+            uint64_t clear_mask = ~(mask << bit_off);
+
+            void *ptr = &val[off];
+            std::size_t unit_sz = fld.alloc_size();
+            if (unit_sz == 1) {
+                auto *p = reinterpret_cast<uint8_t *>(ptr);
+                *p = static_cast<uint8_t>((*p & clear_mask) | uval);
+            } else if (unit_sz == 2) {
+                auto *p = reinterpret_cast<uint16_t *>(ptr);
+                *p = static_cast<uint16_t>((*p & clear_mask) | uval);
+            } else if (unit_sz == 4) {
+                auto *p = reinterpret_cast<uint32_t *>(ptr);
+                *p = static_cast<uint32_t>((*p & clear_mask) | uval);
+            } else if (unit_sz == 8) {
+                auto *p = reinterpret_cast<uint64_t *>(ptr);
+                *p = static_cast<uint64_t>((*p & clear_mask) | uval);
+            }
         } else {
-            from_lua_str(L, fld, &val[off], fld.alloc_size(), -1);
+            bool elem_struct = (fld.type() == ast::C_BUILTIN_RECORD);
+            bool elem_arr = (fld.type() == ast::C_BUILTIN_ARRAY);
+            if ((elem_arr || elem_struct) && lua_istable(L, -1)) {
+                from_lua_table(L, fld, &val[off], fld.alloc_size(), lua_gettop(L));
+            } else {
+                from_lua_str(L, fld, &val[off], fld.alloc_size(), -1);
+            }
         }
         filled = true;
         lua_pop(L, 1);

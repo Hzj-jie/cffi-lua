@@ -2498,15 +2498,56 @@ static ast::c_record const *parse_record(lex_state &ls, bool *newst) {
             if (!parse_type_ptr(ls, tp, &fpn, false, false, tdef_bltin)) {
                 return nullptr;
             }
+            int bwidth = -1;
+            if (test_next(ls, ':')) {
+                ast::c_expr exp;
+                if (!parse_cexpr(ls, exp)) {
+                    return nullptr;
+                }
+                ast::c_expr_type et;
+                ast::c_value val;
+                if (!exp.eval(ls.lua_state(), val, et, true)) {
+                    std::size_t strl;
+                    char const *errm = lua_tolstring(ls.lua_state(), -1, &strl);
+                    ls.get_buf().set(errm, strl);
+                    lua_pop(ls.lua_state(), 1);
+                    if (!ls.syntax_error()) {
+                        return nullptr;
+                    }
+                }
+                switch (et) {
+                    case ast::c_expr_type::INT: bwidth = val.i; break;
+                    case ast::c_expr_type::UINT: bwidth = int(val.u); break;
+                    case ast::c_expr_type::LONG: bwidth = int(val.l); break;
+                    case ast::c_expr_type::ULONG: bwidth = int(val.ul); break;
+                    case ast::c_expr_type::LLONG: bwidth = int(val.ll); break;
+                    case ast::c_expr_type::ULLONG: bwidth = int(val.ull); break;
+                    default:
+                        ls.get_buf().set("invalid bitfield width expression");
+                        if (!ls.syntax_error()) {
+                            return nullptr;
+                        }
+                }
+                if (bwidth < 0) {
+                    ls.get_buf().set("negative bitfield width");
+                    if (!ls.syntax_error()) {
+                        return nullptr;
+                    }
+                }
+            }
             if (!parse_attributes(ls)) {
                 return nullptr;
             }
             if (fpn[0] == '?') {
+                if (bwidth >= 0) {
+                    fields.emplace_back(util::strbuf{}, util::move(tp), bwidth);
+                    continue;
+                }
                 /* nameless field declarations do nothing */
                 goto field_end;
             }
             flexible = tp.flex();
-            fields.emplace_back(util::move(fpn), util::move(tp));
+            fields.emplace_back(util::move(fpn), util::move(tp), bwidth);
             /* flexible array must be the last in the list */
             if (flexible) {
                 break;

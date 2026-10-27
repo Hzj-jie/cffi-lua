@@ -216,3 +216,31 @@ assert(ffi.sizeof("struct packed_s") == 5)
 assert(ffi.alignof("struct packed_s") == 1)
 assert(ffi.offsetof("struct packed_s", "i") == 1)
 assert(ffi.sizeof("enum packed_e") == 4)
+
+-- bitfields
+ffi.cdef [[
+    struct bitfield_s {
+        int a: 4;
+        int b: 8;
+        unsigned int c: 20;
+    };
+]]
+
+local bs = ffi.new("struct bitfield_s")
+assert(ffi.sizeof("struct bitfield_s") == 4)
+local off, boff, bsize = ffi.offsetof("struct bitfield_s", "b")
+assert(off == 0)
+assert(boff == 4)
+assert(bsize == 8)
+
+bs.a = -2
+bs.b = 42
+bs.c = 1000
+assert(bs.a == -2)
+assert(bs.b == 42)
+assert(bs.c == 1000)
+
+local bs2 = ffi.new("struct bitfield_s", { a = 3, b = 15, c = 99 })
+assert(bs2.a == 3)
+assert(bs2.b == 15)
+assert(bs2.c == 99)

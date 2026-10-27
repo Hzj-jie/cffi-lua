@@ -990,12 +990,14 @@ private:
 /* represents a record type: can be a struct or a union */
 struct c_record: c_object {
     struct field {
-        field(util::strbuf nm, c_type &&tp):
-            name{util::move(nm)}, type(util::move(tp))
+        field(util::strbuf nm, c_type &&tp, int bwidth = -1):
+            name{util::move(nm)}, type(util::move(tp)), bit_width{bwidth}
         {}
 
         util::strbuf name;
         c_type type;
+        int bit_width = -1;
+        int bit_offset = 0;
         std::size_t offset = 0;
     };
 
@@ -1050,6 +1052,10 @@ struct c_record: c_object {
 
     void packed(bool p) {
         p_packed = p;
+    }
+
+    bool has_bitfields() const {
+        return p_has_bitfields;
     }
 
     bool opaque() const {
@@ -1137,6 +1143,7 @@ private:
     int p_metaflags = 0;
     bool p_uni;
     bool p_packed = false;
+    bool p_has_bitfields = false;
 };
 
 struct c_enum: c_object {

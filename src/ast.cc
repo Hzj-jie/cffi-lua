@@ -1305,13 +1305,23 @@ void c_record::set_fields(util::vector<field> fields) {
         for (std::size_t i = 0; i < p_fields.size(); ++i) {
             auto &fld = p_fields[i];
             fld.offset = 0;
-            std::size_t asz;
-            auto *ft = libffi_base(fld.type, asz);
-            std::size_t falign = p_packed ? 1 : ft->alignment;
-            if (falign > max_align) max_align = falign;
-            if ((ft->size * asz) > max_size) max_size = ft->size * asz;
+            fld.bit_offset = 0;
+            if (fld.bit_width >= 0) {
+                p_has_bitfields = true;
+                std::size_t asz;
+                auto *ft = libffi_base(fld.type, asz);
+                std::size_t falign = p_packed ? 1 : ft->alignment;
+                if (falign > max_align) max_align = falign;
+                if (ft->size > max_size) max_size = ft->size;
+            } else {
+                std::size_t asz;
+                auto *ft = libffi_base(fld.type, asz);
+                std::size_t falign = p_packed ? 1 : ft->alignment;
+                if (falign > max_align) max_align = falign;
+                if ((ft->size * asz) > max_size) max_size = ft->size * asz;
+            }
         }
-        if (p_packed) {
+        if (p_packed || p_has_bitfields) {
             p_ffi_type.type = FFI_TYPE_STRUCT;
             p_ffi_type.alignment = max_align;
             std::size_t total_size = ((max_size + max_align - 1) / max_align) * max_align;
@@ -1341,27 +1351,62 @@ void c_record::set_fields(util::vector<field> fields) {
         return;
     }
 
-    std::size_t bytepos = 0;
+    std::size_t bitpos = 0;
     std::size_t max_align = 1;
 
     for (std::size_t i = 0; i < p_fields.size(); ++i) {
         auto &fld = p_fields[i];
-        std::size_t asz;
-        auto *ft = libffi_base(fld.type, asz);
-        std::size_t falign = p_packed ? 1 : ft->alignment;
-        if (falign > max_align) {
-            max_align = falign;
+        if (fld.bit_width >= 0) {
+            p_has_bitfields = true;
+            std::size_t asz;
+            auto *ft = libffi_base(fld.type, asz);
+            std::size_t unit_align = p_packed ? 1 : ft->alignment;
+            if (unit_align > max_align) {
+                max_align = unit_align;
+            }
+            std::size_t align_bits = unit_align * 8;
+            if (fld.bit_width == 0) {
+                if (align_bits > 0) {
+                    bitpos = ((bitpos + align_bits - 1) / align_bits) * align_bits;
+                }
+                fld.offset = bitpos / 8;
+                fld.bit_offset = 0;
+                continue;
+            }
+            std::size_t U = ft->size * 8;
+            std::size_t w = static_cast<std::size_t>(fld.bit_width);
+            if (!p_packed && U > 0 && (bitpos / U) != ((bitpos + w - 1) / U)) {
+                bitpos = ((bitpos + align_bits - 1) / align_bits) * align_bits;
+            }
+            if (p_packed) {
+                fld.offset = bitpos / 8;
+                fld.bit_offset = int(bitpos % 8);
+            } else {
+                fld.offset = (bitpos / U) * ft->size;
+                fld.bit_offset = int(bitpos % U);
+            }
+            bitpos += w;
+        } else {
+            std::size_t asz;
+            auto *ft = libffi_base(fld.type, asz);
+            std::size_t falign = p_packed ? 1 : ft->alignment;
+            if (falign > max_align) {
+                max_align = falign;
+            }
+            std::size_t bytepos = (bitpos + 7) / 8;
+            bytepos = ((bytepos + falign - 1) / falign) * falign;
+            fld.offset = bytepos;
+            fld.bit_offset = 0;
+            bitpos = (bytepos + ft->size * asz) * 8;
         }
-        bytepos = ((bytepos + falign - 1) / falign) * falign;
-        fld.offset = bytepos;
-        bytepos += ft->size * asz;
     }
-    std::size_t total_size = ((bytepos + max_align - 1) / max_align) * max_align;
+    std::size_t total_size = (bitpos + 7) / 8;
+    total_size = ((total_size + max_align - 1) / max_align) * max_align;
     if (total_size == 0) {
         total_size = max_align;
     }
 
-    if (p_packed) {
+    if (p_packed || p_has_bitfields) {
         ffi_type *ubase = nullptr;
         auto check_ubase = [max_align](auto &tp) {
             if (max_align % tp.alignment) {

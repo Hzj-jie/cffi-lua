@@ -245,6 +245,66 @@ struct cdata_meta {
                 if (foff < 0) {
                     return false;
                 }
+                auto const *rfld = decl->record().find_field(fname);
+                if (rfld && rfld->bit_width >= 0) {
+                    void *bptr = util::pun<unsigned char *>(valp) + foff;
+                    if (New) {
+                        lua_Integer in_val = luaL_checkinteger(L, 3);
+                        uint64_t uval = static_cast<uint64_t>(in_val);
+                        int bit_off = rfld->bit_offset;
+                        int bit_w = rfld->bit_width;
+                        uint64_t mask = (bit_w >= 64) ? ~uint64_t(0) : ((uint64_t(1) << bit_w) - 1);
+                        uval = (uval & mask) << bit_off;
+                        uint64_t clear_mask = ~(mask << bit_off);
+
+                        std::size_t unit_sz = outf->alloc_size();
+                        if (unit_sz == 1) {
+                            auto *p = reinterpret_cast<uint8_t *>(bptr);
+                            *p = static_cast<uint8_t>((*p & clear_mask) | uval);
+                        } else if (unit_sz == 2) {
+                            auto *p = reinterpret_cast<uint16_t *>(bptr);
+                            *p = static_cast<uint16_t>((*p & clear_mask) | uval);
+                        } else if (unit_sz == 4) {
+                            auto *p = reinterpret_cast<uint32_t *>(bptr);
+                            *p = static_cast<uint32_t>((*p & clear_mask) | uval);
+                        } else if (unit_sz == 8) {
+                            auto *p = reinterpret_cast<uint64_t *>(bptr);
+                            *p = static_cast<uint64_t>((*p & clear_mask) | uval);
+                        }
+                    } else {
+                        void const *ptr_c = bptr;
+                        uint64_t raw_val = 0;
+                        std::size_t unit_sz = outf->alloc_size();
+                        if (unit_sz == 1) {
+                            raw_val = *reinterpret_cast<uint8_t const *>(ptr_c);
+                        } else if (unit_sz == 2) {
+                            raw_val = *reinterpret_cast<uint16_t const *>(ptr_c);
+                        } else if (unit_sz == 4) {
+                            raw_val = *reinterpret_cast<uint32_t const *>(ptr_c);
+                        } else if (unit_sz == 8) {
+                            raw_val = *reinterpret_cast<uint64_t const *>(ptr_c);
+                        }
+                        int bit_off = rfld->bit_offset;
+                        int bit_w = rfld->bit_width;
+                        uint64_t mask = (bit_w >= 64) ? ~uint64_t(0) : ((uint64_t(1) << bit_w) - 1);
+                        uint64_t val = (raw_val >> bit_off) & mask;
+                        bool is_signed = (
+                            outf->type() == ast::C_BUILTIN_SCHAR ||
+                            outf->type() == ast::C_BUILTIN_SHORT ||
+                            outf->type() == ast::C_BUILTIN_INT ||
+                            outf->type() == ast::C_BUILTIN_LONG ||
+                            outf->type() == ast::C_BUILTIN_LLONG ||
+                            (outf->type() == ast::C_BUILTIN_CHAR && (char(-1) < 0))
+                        );
+                        if (is_signed && (val & (uint64_t(1) << (bit_w - 1)))) {
+                            val |= ~mask;
+                            lua_pushinteger(L, lua_Integer(static_cast<int64_t>(val)));
+                        } else {
+                            lua_pushinteger(L, lua_Integer(val));
+                        }
+                    }
+                    return true;
+                }
                 func(*outf, util::pun<unsigned char *>(valp) + foff);
                 return true;
             }
@@ -1287,6 +1347,12 @@ struct ffi_module {
         auto off = cs.field_offset(fname, tp);
         if (off >= 0) {
             lua_pushinteger(L, lua_Integer(off));
+            auto const *rfld = cs.find_field(fname);
+            if (rfld && rfld->bit_width >= 0) {
+                lua_pushinteger(L, lua_Integer(rfld->bit_offset));
+                lua_pushinteger(L, lua_Integer(rfld->bit_width));
+                return 3;
+            }
             return 1;
         }
         return 0;

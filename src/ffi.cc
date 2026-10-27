@@ -186,7 +186,13 @@ static bool prepare_cif(
     util::rc_obj<ast::c_function> const &func, ffi_cif &cif,
     ffi_type **targs, std::size_t nargs
 ) {
+    if (func->result().type() != ast::C_BUILTIN_VOID && !func->result().passable()) {
+        return false;
+    }
     for (std::size_t i = 0; i < nargs; ++i) {
+        if (!func->params()[i].type().passable()) {
+            return false;
+        }
         targs[i] = func->params()[i].libffi_type();
     }
     using U = unsigned int;

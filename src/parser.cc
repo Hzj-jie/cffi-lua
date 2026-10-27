@@ -1517,15 +1517,6 @@ static bool parse_paramlist(lex_state &ls, util::vector<ast::c_param> &params) {
         if (!parse_type(ls, pt, &pname)) {
             return false;
         }
-        /* check if argument type can be passed by value */
-        if (!pt.passable()) {
-            auto &b = ls.get_buf();
-            b.clear();
-            b.append('\'');
-            pt.serialize(b);
-            b.append("' cannot be passed by value");
-            return ls.syntax_error();
-        }
         if (pname[0] == '?') {
             pname.clear();
         }
@@ -1994,17 +1985,13 @@ newlevel:
                 olev->argl.pop_back();
             }
             /* check if return type can be passed */
-            if (
-                (tp.type() == ast::C_BUILTIN_ARRAY) ||
-                ((tp.type() != ast::C_BUILTIN_VOID) && !tp.passable())
-            ) {
+            if (tp.type() == ast::C_BUILTIN_ARRAY) {
                 auto &b = ls.get_buf();
                 b.clear();
                 b.append('\'');
                 tp.serialize(b);
                 b.append("' cannot be passed by value");
                 return ls.syntax_error();
-                break;
             }
             tp = ast::c_type{util::make_rc<ast::c_function>(
                 util::move(tp), util::move(olev->argl), fflags

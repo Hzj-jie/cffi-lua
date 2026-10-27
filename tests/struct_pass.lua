@@ -17,3 +17,15 @@ local c = L.test_struct_val(a, b)
 
 assert(c.a == 55)
 assert(c.b == 110)
+
+-- function declaration returning a struct containing a union
+ffi.cdef [[
+    typedef struct {
+        union {
+            int a;
+            char b;
+        } u;
+    } struct_with_union_t;
+
+    struct_with_union_t test_proto_only(struct_with_union_t x);
+]]

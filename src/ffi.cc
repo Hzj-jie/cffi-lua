@@ -1041,7 +1041,7 @@ static void *from_lua(
             if ((rule == RULE_CAST) || (
                 (tp.type() == ast::C_BUILTIN_PTR) &&
                 (
-                    (tp.ptr_base().type() == ast::C_BUILTIN_CHAR) ||
+                    tp.ptr_base().byte() ||
                     (tp.ptr_base().type() == ast::C_BUILTIN_VOID)
                 ) &&
                 (tp.ptr_base().cv() & ast::C_CV_CONST)

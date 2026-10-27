@@ -28,3 +28,28 @@ tap(x)
 tap(xp)
 
 tap:free()
+
+-- string conversion to const byte pointers and const void *
+
+ffi.cdef [[
+    struct test_str_assign {
+        const unsigned char *u;
+        const signed char *s;
+        const int8_t *i;
+        const void *v;
+        unsigned char *mut_u;
+        const uint16_t *u16;
+    };
+]]
+local t = ffi.new("struct test_str_assign")
+t.u = "abc"
+assert(ffi.string(t.u) == "abc")
+t.s = "abc"
+assert(ffi.string(t.s) == "abc")
+t.i = "abc"
+assert(ffi.string(t.i) == "abc")
+t.v = "abc"
+assert(ffi.string(t.v, 3) == "abc")
+
+assert(not pcall(function() t.mut_u = "abc" end))
+assert(not pcall(function() t.u16 = "abc" end))

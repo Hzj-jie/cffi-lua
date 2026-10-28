@@ -867,6 +867,9 @@ public:
 
     template<typename F>
     void for_each(F &&func) const {
+        if (!p_nelems) {
+            return;
+        }
         for (std::size_t i = 0; i < p_size; ++i) {
             for (bucket *b = p_buckets[i]; b; b = b->next) {
                 func(b->value.key, b->value.data);

@@ -61,6 +61,21 @@ test_struct test_struct_val(test_struct a, test_struct b) {
     return test_struct{a.a + b.a, a.b + b.b};
 }
 
+extern "C" DLL_EXPORT
+int test_vararg_struct(int count, ...) {
+    va_list args;
+    va_start(args, count);
+    int sum = 0;
+    for (int i = 0; i < count; ++i) {
+        test_struct *s = va_arg(args, test_struct *);
+        if (s) {
+            sum += s->a + s->b;
+        }
+    }
+    va_end(args);
+    return sum;
+}
+
 /* fundamental type passing tests */
 
 /* need to return a struct to read it in lua as bytes */

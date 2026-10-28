@@ -376,7 +376,9 @@ int call_cif(cdata &fud, lua_State *L, std::size_t largs) {
         if (tp.type() == ast::C_BUILTIN_RECORD) {
             /* special case for vararg passing of records: by ptr */
             auto &cd = tocdata(L, i + 2);
-            std::memcpy(&pvals[i], cd.as_ptr(), sizeof(void *));
+            void *p = cd.as_deref_ptr();
+            std::memcpy(&pvals[i], &p, sizeof(void *));
+            vals[i] = &pvals[i];
             continue;
         }
         vals[i] = from_lua(L, util::move(tp), &pvals[i], i + 2, rsz, RULE_PASS);

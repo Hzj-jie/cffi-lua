@@ -20,3 +20,15 @@ assert(ffi.string(buf) == "123456")
 local ret = L.test_snprintf(buf, bufs, "%s %g", "hello", 3.14)
 assert(ret == 10)
 assert(ffi.string(buf) == "hello 3.14")
+
+ffi.cdef [[
+    typedef struct {
+        int a, b;
+    } test_vararg_s;
+
+    int test_vararg_struct(int count, ...);
+]]
+
+local s1 = ffi.new("test_vararg_s", {10, 20})
+local s2 = ffi.new("test_vararg_s", {30, 40})
+assert(L.test_vararg_struct(2, s1, s2) == 100)

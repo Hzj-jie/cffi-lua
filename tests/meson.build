@@ -41,6 +41,13 @@ penv.append('CFFI_PATH', meson.project_build_root())
 penv.append('TESTS_PATH', meson.current_source_dir())
 penv.append('TESTLIB_PATH', testlib.full_path())
 
+util_test = executable('util_test', ['util_test.cc'],
+    include_directories: include_directories('../src'),
+    install: false,
+    cpp_args: extra_cxxflags
+)
+test('util', util_test)
+
 foreach tcase: test_cases
     if luaver_num < tcase[3]
         continue

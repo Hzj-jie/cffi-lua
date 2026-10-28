@@ -496,12 +496,12 @@ struct vector {
     }
 
     void push_back(T const &v) {
-        reserve(p_cap + 1);
+        if (p_size == p_cap) { reserve(p_cap ? (p_cap * 2) : MIN_SIZE); }
         new (&p_buf[p_size++]) T(v);
     }
 
     void push_back(T &&v) {
-        reserve(p_cap + 1);
+        if (p_size == p_cap) { reserve(p_cap ? (p_cap * 2) : MIN_SIZE); }
         new (&p_buf[p_size++]) T(util::move(v));
     }
 
@@ -512,7 +512,7 @@ struct vector {
 
     template<typename ...A>
     T &emplace_back(A &&...args) {
-        reserve(p_cap + 1);
+        if (p_size == p_cap) { reserve(p_cap ? (p_cap * 2) : MIN_SIZE); }
         new (&p_buf[p_size]) T(util::forward<A>(args)...);
         return p_buf[p_size++];
     }

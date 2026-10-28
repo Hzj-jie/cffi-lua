@@ -1513,6 +1513,9 @@ converr:
             if (cd.decl.is_ref()) {
                 return cd.address_of();
             }
+            if (cd.decl.type() == ast::C_BUILTIN_RECORD) {
+                return cd.address_of();
+            }
             cd.decl.serialize(L);
             lua_pushfstring(
                 L, "cannot convert '%s' to 'void *'",

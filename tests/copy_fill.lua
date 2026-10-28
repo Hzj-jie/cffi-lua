@@ -40,3 +40,17 @@ assert(elem.a == sb)
 assert(elem.b == sb)
 assert(elem.c == 0)
 assert(elem.d == 0)
+
+-- struct cdata value as destination in copy and fill
+local s = ffi.new("struct foo")
+ffi.fill(s, 2, sb)
+assert(s.a == sb)
+assert(s.b == sb)
+assert(s.c == 0)
+assert(s.d == 0)
+
+ffi.copy(s, "1234", 4)
+assert(s.a == string.byte("1"))
+assert(s.b == string.byte("2"))
+assert(s.c == string.byte("3"))
+assert(s.d == string.byte("4"))

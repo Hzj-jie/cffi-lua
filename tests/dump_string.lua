@@ -6,6 +6,8 @@ local s = "hello world"
 
 assert(ffi.string(s) == s)
 assert(ffi.string(ffi.cast("char const *", s)) == s)
+assert(ffi.string(s, nil) == s)
+assert(ffi.string(ffi.cast("char const *", s), nil) == s)
 
 -- byte array dump + pointer to it
 

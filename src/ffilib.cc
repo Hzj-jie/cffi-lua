@@ -1414,7 +1414,7 @@ struct ffi_module {
                 /* allow passing through the string, but do not use
                  * lua_isstring as that allows numbers as well
                  */
-                if (lua_gettop(L) <= 1) {
+                if (lua_isnoneornil(L, 2)) {
                     lua_pushvalue(L, 1);
                 } else {
                     lua_pushlstring(
@@ -1439,7 +1439,7 @@ struct ffi_module {
         }
         /* handle potential ref case */
         void **valp = static_cast<void **>(ud.as_deref_ptr());
-        if (lua_gettop(L) > 1) {
+        if (!lua_isnoneornil(L, 2)) {
             /* if the length is given, special logic is used; any value can
              * be serialized here (addresses will be taken automatically)
              */

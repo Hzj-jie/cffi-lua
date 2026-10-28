@@ -109,6 +109,7 @@ static constexpr char const CFFI_CDATA_MT[] = "cffi_cdata_handle";
 static constexpr char const CFFI_LIB_MT[] = "cffi_lib_handle";
 static constexpr char const CFFI_DECL_STOR[] = "cffi_decl_stor";
 static constexpr char const CFFI_PARSER_STATE[] = "cffi_parser_state";
+static constexpr char const CFFI_CTYPE_CACHE[] = "cffi_ctype_cache";
 
 template<typename T>
 static T *touserdata(lua_State *L, int index) {

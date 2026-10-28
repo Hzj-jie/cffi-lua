@@ -1144,11 +1144,28 @@ struct ffi_module {
         }
         std::size_t slen;
         char const *inp = luaL_checklstring(L, idx, &slen);
-        auto &ct = ffi::newctype(
-            L, parser::parse_type(L, inp, inp + slen, paridx)
-        );
+        if ((paridx >= 0) || std::memchr(inp, '{', slen)) {
+            auto &ct = ffi::newctype(
+                L, parser::parse_type(L, inp, inp + slen, paridx)
+            );
+            lua_replace(L, idx);
+            return ct.decl;
+        }
+        lua_getfield(L, LUA_REGISTRYINDEX, lua::CFFI_CTYPE_CACHE);
+        lua_pushvalue(L, idx);
+        lua_rawget(L, -2);
+        if (lua_isnil(L, -1)) {
+            lua_pop(L, 1);
+            ffi::newctype(
+                L, parser::parse_type(L, inp, inp + slen, paridx)
+            );
+            lua_pushvalue(L, idx);
+            lua_pushvalue(L, -2);
+            lua_rawset(L, -4);
+        }
         lua_replace(L, idx);
-        return ct.decl;
+        lua_pop(L, 1);
+        return ffi::tocdata(L, idx).decl;
     }
 
     static int new_f(lua_State *L) {
@@ -1757,8 +1774,18 @@ argcheck:
         /* stack: empty */
     }
 
+    static void setup_ctype_cache(lua_State *L) {
+        lua_newtable(L);
+        lua_newtable(L);
+        lua_pushliteral(L, "v");
+        lua_setfield(L, -2, "__mode");
+        lua_setmetatable(L, -2);
+        lua_setfield(L, LUA_REGISTRYINDEX, lua::CFFI_CTYPE_CACHE);
+    }
+
     static void open(lua_State *L) {
         setup_dstor(L); /* declaration store */
+        setup_ctype_cache(L);
         parser::init(L);
 
         /* cdata handles */

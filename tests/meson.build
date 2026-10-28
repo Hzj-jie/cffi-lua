@@ -30,6 +30,7 @@ test_cases = [
     ['type checks',                  'istype',                    false,  501],
     ['metatype',                     'metatype',                  false,  501],
     ['metatype (5.4)',               'metatype54',                false,  504],
+    ['ctype cache',                  'ctype_cache',               false,  501],
 ]
 
 # We put the deps path in PATH because that's where our Lua dll file is

@@ -204,7 +204,7 @@ static bool prepare_cif(
 
 static void make_cdata_func(
     lua_State *L, void (*funp)(), util::rc_obj<ast::c_function> func, bool fptr,
-    closure_data *cd
+    closure_data *cd, bool alloc_cb = false
 ) {
     auto nargs = func->params().size();
 
@@ -238,7 +238,8 @@ static void make_cdata_func(
      *     } val;
      * }
      */
-    ast::c_type funct{func, 0, funp == nullptr};
+    bool is_cb = (cd != nullptr) || alloc_cb;
+    ast::c_type funct{func, 0, is_cb};
     auto &fud = newcdata(
         L, fptr ? ast::c_type{
             util::make_rc<ast::c_type>(util::move(funct)),
@@ -249,10 +250,11 @@ static void make_cdata_func(
         ))
     );
     fud.as<fdata>().sym = funp;
+    fud.as<fdata>().cd = nullptr;
 
     if (func->variadic()) {
         fdata_get_aux(fud.as<fdata>()) = nullptr;
-        if (!funp) {
+        if (is_cb) {
             luaL_error(L, "variadic callbacks are not supported");
         }
         nargs = 0;
@@ -265,8 +267,8 @@ static void make_cdata_func(
         luaL_error(L, "unexpected failure setting up '%s'", func->name());
     }
 
-    if (!funp) {
-        /* no funcptr means we're setting up a callback */
+    if (is_cb) {
+        /* setting up a callback */
         if (cd) {
             /* copying existing callback reference */
             fud.as<fdata>().cd = cd;
@@ -344,6 +346,9 @@ static bool prepare_cif_var(
 }
 
 int call_cif(cdata &fud, lua_State *L, std::size_t largs) {
+    if (!fud.as<fdata>().sym) {
+        luaL_error(L, "attempt to call a NULL function pointer");
+    }
     auto &func = fud.decl.function();
     auto &pdecls = func->params();
 
@@ -1191,7 +1196,18 @@ static void from_lua_str(
     return;
 fallback:
     vp = from_lua(L, decl, &sv, idx, vsz, RULE_CONV);
-    std::memcpy(val, vp, vsz);
+    if (decl.callable() && !vp) {
+        make_cdata_func(
+            L, nullptr, decl.function(),
+            decl.type() == ast::C_BUILTIN_PTR, nullptr, true
+        );
+        auto &fd = tocdata(L, -1);
+        fd.as<fdata>().cd->fref = util::pun<int>(sv);
+        *static_cast<void (**)()>(stor) = fd.as<fdata>().sym;
+        lua_pop(L, 1);
+    } else {
+        std::memcpy(val, vp, vsz);
+    }
 }
 
 static void from_lua_table_record(
@@ -1470,7 +1486,7 @@ void from_lua(lua_State *L, ast::c_type const &decl, void *stor, int idx) {
         if (decl.callable() && !vp) {
             make_cdata_func(
                 L, nullptr, decl.function(),
-                decl.type() == ast::C_BUILTIN_PTR, nullptr
+                decl.type() == ast::C_BUILTIN_PTR, nullptr, true
             );
             auto &fd = tocdata(L, -1);
             fd.as<fdata>().cd->fref = util::pun<int>(sv);
@@ -1644,10 +1660,12 @@ newdata:
         if (cdp) {
             std::memcpy(&symp, cdp, sizeof(symp));
         }
+        bool alloc_cb = (ninits == 1 && !cdp && !cd);
         make_cdata_func(
-            L, symp, decl.function(), decl.type() == ast::C_BUILTIN_PTR, cd
+            L, symp, decl.function(), decl.type() == ast::C_BUILTIN_PTR, cd,
+            alloc_cb
         );
-        if (!cdp && !cd) {
+        if (alloc_cb) {
             tocdata(L, -1).as<fdata>().cd->fref = util::pun<int>(stor);
         }
     } else {

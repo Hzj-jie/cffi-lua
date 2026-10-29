@@ -57,3 +57,29 @@ assert(not called2)
 st.cb()
 assert(called2)
 cb3:free()
+
+-- NULL function pointers
+assert(ffi.cast("void (*)()", 0) == ffi.nullptr)
+assert(ffi.new("void (*)()") == ffi.nullptr)
+assert(ffi.new("void (*)()", nil) == ffi.nullptr)
+
+local st2 = ffi.new("struct test")
+assert(st2.cb == ffi.nullptr)
+
+if ffi.cast("int *", 0) == nil then
+    assert(ffi.cast("void (*)()", 0) == nil)
+    assert(ffi.new("void (*)()") == nil)
+    assert(ffi.new("void (*)()", nil) == nil)
+    assert(st2.cb == nil)
+end
+
+local ok, err = pcall(function()
+    local fn = ffi.cast("void (*)()", 0)
+    fn()
+end)
+assert(not ok and err:find("attempt to call a NULL function pointer"))
+
+local ok2, err2 = pcall(function()
+    st2.cb()
+end)
+assert(not ok2 and err2:find("attempt to call a NULL function pointer"))

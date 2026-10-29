@@ -1,5 +1,30 @@
 # cffi-lua
 
+> **Note:** This repository is mirrored from commit [`2621884230c9072ad77f7379609b74c9d6dbeb86`](https://github.com/q66/cffi-lua/commit/2621884230c9072ad77f7379609b74c9d6dbeb86) (2026-02-12) of upstream [`q66/cffi-lua`](https://github.com/q66/cffi-lua), with additional commits enhancing LuaJIT FFI compatibility, performance, and integration with the companion `lua-jit-5.5.1` runtime:
+> - Support for C struct and union bitfields with standard C ABI storage unit alignment (`358e975`).
+> - Support for packed structs and unions via `__attribute__((packed))` (`b14717d`).
+> - GCC `__attribute__` syntax parsing (`992b38f`).
+> - Flexible C type specifiers in arbitrary order (`ab0de5c`) and optional trailing semicolon before end of input in `cdef` (`04ecace`).
+> - Top-level `static const` integral declarations (`a7536a6`).
+> - Unsigned enum constants above `INT32_MAX` (`68d40df`).
+> - Flexible array member offset and struct alignment fixes (`f0fc9d9`).
+> - Rejection of incomplete-type record fields at parse time (`7b44207`).
+> - Deferring passable-by-value check from parse time to call time (`402e5e8`).
+> - `restrict` pointer type qualifiers (`87a68df`).
+> - Export of `luaopen_ffi` entrypoint alongside `luaopen_cffi` (`bc4e055`).
+> - Global `type()` and `tonumber()` installation in `luaopen_ffi` (`c157c2a`).
+> - Accepting integer `cdata` for VLA and flexible struct bounds in `ffi.new` (`18462f3`).
+> - Implicit string conversion to `const signed char *` and `const unsigned char *` (`ef60301`).
+> - Implicit pointer conversions between same-size integer types (`f9bff4c`).
+> - Metatype, nil pointer, and number equality comparisons in `__eq` (`1fc4dc8`).
+> - Exporting `__cdata_payload` function pointer in metatable (`11414a4`).
+> - Passing variadic struct `cdata` by pointer (`342db22`).
+> - Struct `cdata` as destination in `copy` and `fill` (`f093a24`).
+> - Treating `nil` length as omitted in `ffi.string` (`9d22071`).
+> - Preserving NULL function pointers without allocating closure trampolines (`64d9877`).
+> - Performance optimizations: geometric growth for `util::vector` capacity (`79c592d`), early return from `util::map::for_each` when empty (`cac812b`), and caching parsed C type strings in `check_ct` (`2621dd5`).
+> - See `git log 2621884..HEAD` for the complete commit history.
+
 [![Build Status](https://github.com/q66/cffi-lua/actions/workflows/build.yaml/badge.svg)](https://github.com/q66/cffi-lua/actions)
 
 This is a portable C FFI for Lua, based on `libffi` and aiming to be mostly
@@ -39,15 +64,10 @@ See `STATUS.md`.
 
 ## Notable differences from LuaJIT
 
-- Equality comparisons against `nil` always result in `false`
-- Equality comparisons between `cdata` and Lua values are always `false`
-- Passing unions (or structs containing unions) is not supported on all platforms
-- Bitfields are not supported
-- Several new API extensions
-
-Equality comparions work this way due to limitations of the Lua metamethod
-semantics. Use `cffi.nullptr` instead. The other limitations are caused by
-`libffi` not supporting these features portably.
+- Equality comparisons against `nil` and Lua values: on standard reference Lua VMs (Lua 5.1–5.5), equality comparisons between `cdata` and any non-cdata Lua value (`nil`, numbers, tables, strings) always evaluate to `false` because standard Lua does not invoke `__eq` for mixed operand types (use `cffi.nullptr` instead). On the companion `lua-jit-5.5.1` runtime, mixed-type `__eq` is enabled, supporting direct `cdata == nil`, `cdata == number`, and metatype `__eq` against Lua values.
+- Bitfields are supported (added in commit `358e975`), with only minor edge cases around 64-bit-base bitfields differing from LuaJIT.
+- Passing unions (or structs containing unions) by value is not supported on all platforms due to `libffi` portability constraints.
+- Several new API extensions (`cffi.nullptr`, `cffi.addressof`, `cffi.toretval`, `cffi.eval`).
 
 ## Dependencies
 

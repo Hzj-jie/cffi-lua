@@ -120,6 +120,7 @@ void destroy_cdata(lua_State *L, cdata &cd) {
     }
     using T = ast::c_type;
     cd.decl.~T();
+    cd.gc_ref = LUA_REFNIL;
 }
 
 void destroy_closure(lua_State *, closure_data *cd) {

@@ -1154,7 +1154,7 @@ struct ffi_module {
         lua_getfield(L, LUA_REGISTRYINDEX, lua::CFFI_CTYPE_CACHE);
         lua_pushvalue(L, idx);
         lua_rawget(L, -2);
-        if (lua_isnil(L, -1)) {
+        if (lua_isnil(L, -1) || !ffi::isctype(ffi::tocdata(L, -1))) {
             lua_pop(L, 1);
             ffi::newctype(
                 L, parser::parse_type(L, inp, inp + slen, paridx)
